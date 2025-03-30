@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { ToastContainer, toast } from 'react-toastify';
-import { IoIosEye } from "react-icons/io";
-import { IoIosEyeOff } from "react-icons/io";
+import { IoIosEye, IoIosEyeOff } from "react-icons/io";
+
 const SignupPage = () => {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
+        phone: '',
         password: '',
         role: 'user',
         subscribedToAlerts: true
@@ -14,12 +15,10 @@ const SignupPage = () => {
 
     const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(false);
-    const [showpass, setshowpass] = useState(false)
+    const [showpass, setshowpass] = useState(false);
 
-    const togglepass = () => {
-        setshowpass(!showpass);
+    const togglepass = () => setshowpass(!showpass);
 
-    }
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
         setFormData({
@@ -39,6 +38,7 @@ const SignupPage = () => {
             setFormData({
                 name: '',
                 email: '',
+                phone: '',
                 password: '',
                 role: 'user',
                 subscribedToAlerts: true
@@ -56,44 +56,15 @@ const SignupPage = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-100 to-blue-50">
             <div className="flex w-full max-w-4xl overflow-hidden rounded-xl shadow-2xl">
-                {/* Left Side - Image and Information */}
                 <div className="hidden md:block w-1/2 bg-blue-600 p-8 text-white">
                     <div className="h-full flex flex-col justify-between">
                         <div>
                             <h2 className="text-3xl font-bold mb-4">Disaster Alert & Response System</h2>
                             <p className="text-blue-100 mb-6">Join our network to receive real-time alerts about natural disasters and emergencies in your area.</p>
                         </div>
-
-                        <div className="space-y-4">
-                            <div className="flex items-start">
-                                <div className="bg-blue-500 p-2 rounded-full mr-3">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                </div>
-                                <p className="text-sm">Real-time disaster notifications</p>
-                            </div>
-                            <div className="flex items-start">
-                                <div className="bg-blue-500 p-2 rounded-full mr-3">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                </div>
-                                <p className="text-sm">Interactive map-based tracking</p>
-                            </div>
-                            <div className="flex items-start">
-                                <div className="bg-blue-500 p-2 rounded-full mr-3">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                </div>
-                                <p className="text-sm">Community emergency reporting</p>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                {/* Right Side - Signup Form */}
                 <div className="w-full md:w-1/2 bg-white p-8">
                     <div className="mb-6">
                         <h2 className="text-2xl font-bold text-gray-800">Create Account</h2>
@@ -134,42 +105,51 @@ const SignupPage = () => {
                         </div>
 
                         <div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                                <div className="relative">
-                                    <input
-                                        type={showpass ? "text" : "password"}
-                                        name="password"
-                                        value={formData.password}
-                                        onChange={handleChange}
-                                        required
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        placeholder="Enter your password"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={togglepass}
-                                        className="absolute inset-y-0 right-2 flex items-center text-gray-600"
-                                    >
-                                        {showpass ? <IoIosEyeOff size={20} /> : <IoIosEye size={20} />}
-                                    </button>
-                                </div>
-                            </div>
-
-
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                            <input
+                                type="tel"
+                                name="phone"
+                                value={formData.phone}
+                                onChange={handleChange}
+                                required
+                                pattern="[0-9]{10}"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="1234567890"
+                            />
                         </div>
 
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <div className="relative">
+                                <input
+                                    type={showpass ? "text" : "password"}
+                                    name="password"
+                                    value={formData.password}
+                                    onChange={handleChange}
+                                    required
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Enter your password"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={togglepass}
+                                    className="absolute inset-y-0 right-2 flex items-center text-gray-600"
+                                >
+                                    {showpass ? <IoIosEyeOff size={20} /> : <IoIosEye size={20} />}
+                                </button>
+                            </div>
+                        </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                             <select
                                 name="role"
                                 value={formData.role}
                                 onChange={handleChange}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
-                                <option value="user">Regular User</option>
-                                <option value="admin">Emergency Administrator</option>
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
                             </select>
                         </div>
 
@@ -179,11 +159,9 @@ const SignupPage = () => {
                                 name="subscribedToAlerts"
                                 checked={formData.subscribedToAlerts}
                                 onChange={handleChange}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                className="mr-2"
                             />
-                            <label className="ml-2 block text-sm text-gray-700">
-                                Subscribe to receive disaster alerts in my area
-                            </label>
+                            <label className="text-sm text-gray-700">Subscribe to alerts</label>
                         </div>
 
                         <button
@@ -191,30 +169,12 @@ const SignupPage = () => {
                             disabled={loading}
                             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-70"
                         >
-                            {loading ? (
-                                <span className="flex items-center justify-center">
-                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Processing...
-                                </span>
-                            ) : "Create Account"}
+                            {loading ? "Processing..." : "Create Account"}
                         </button>
                     </form>
-
-                    <div className="mt-6 text-center">
-                        <p className="text-sm text-gray-600">
-                            Already have an account?{" "}
-                            <a href="/login" className="text-blue-600 hover:underline">
-                                Sign in
-                            </a>
-                        </p>
-                    </div>
                 </div>
             </div>
             <ToastContainer position="top-right" autoClose={3000} />
-
         </div>
     );
 };

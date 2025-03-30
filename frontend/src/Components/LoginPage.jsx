@@ -32,16 +32,19 @@ const LoginPage = () => {
         setLoading(true);
         try {
             const response = await axios.post('http://localhost:8000/user/login', formData);
-            toast.success("Login successful! Redirecting...");
 
+            const { token } = response.data;
+
+            localStorage.setItem("authToken", token);
+
+            toast.success("Login successful! Redirecting...");
             setMessage(response.data.message);
-            setFormData({
-                email: '',
-                password: ''
-            });
+            setFormData({ email: '', password: '' });
+
             setTimeout(() => {
-                window.location.href = "/";
+                window.location.href = "/";  
             }, 1500);
+
         } catch (error) {
             setMessage(error.response?.data?.error || 'Login failed');
             toast.error(error.response?.data?.error || 'Login failed');
@@ -49,6 +52,7 @@ const LoginPage = () => {
             setLoading(false);
         }
     };
+
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-100 to-blue-50">

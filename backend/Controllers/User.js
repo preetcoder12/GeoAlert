@@ -1,12 +1,15 @@
-const User = require("../models/Users");
-const bcrypt = require("bcrypt");
+const express = require('express');
+const User = require('../models/Users'); // Import User model
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+require("dotenv").config();
 
 const UserSignup = async (req, res) => {
     try {
-        const { name, email, password, role, subscribedToAlerts } = req.body;
+        const { name, email, password, role = "user", phone, subscribedToAlerts = false } = req.body;
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ error: "Name, email, and password are required" });
+        if (!name || !email || !password || !phone) {
+            return res.status(400).json({ error: "Name, email, phone, and password are required" });
         }
 
         const nameRegex = /^[A-Za-z\s]{3,50}$/;
@@ -36,6 +39,7 @@ const UserSignup = async (req, res) => {
             email,
             password: hashedPassword,
             role,
+            phone, // Ensure phone is stored if needed in the schema
             subscribedToAlerts,
         });
 
@@ -43,7 +47,7 @@ const UserSignup = async (req, res) => {
 
         res.status(201).json({ message: "User registered successfully!" });
     } catch (error) {
-        console.error("Error during signup:", error.message);
+        console.error("Error during signup:", error);
         res.status(500).json({ error: "Internal Server Error" });
     }
 };
@@ -66,7 +70,7 @@ const UserLogin = async (req, res) => {
 
         const existing_user = await User.findOne({ email });
         if (!existing_user) {
-            return res.status(400).json({ error: "User does'nt exist with provided email" });
+            return res.status(400).json({ error: "User doesn't exist with provided email" });
         }
 
         const passwordmatch = await bcrypt.compare(password, existing_user.password);
@@ -74,12 +78,17 @@ const UserLogin = async (req, res) => {
             return res.status(401).json({ error: "Incorrect password" });
         }
 
-        res.status(200).json({ message: "User login successful!" });
+        const token = jwt.sign({ userId: existing_user._id }, process.env.JWT_SECRET, {
+            expiresIn: "1h",
+        });
+
+        return res.status(200).json({ message: "Login successful", token });
 
     } catch (error) {
         console.error("Error during login:", error.message);
-        res.status(500).json({ error: "Internal Server Error" });
+        return res.status(500).json({ error: "Internal Server Error" });
     }
 };
+
 
 module.exports = { UserSignup, UserLogin };

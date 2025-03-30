@@ -2,6 +2,7 @@ require("dotenv").config();
 const axios = require('axios');
 const EONET_API_URL = process.env.Api || 'https://eonet.gsfc.nasa.gov/api/v2.1';
 
+
 // Cache for categories and layers to reduce API calls
 let categoryCache = null;
 let layerCache = null;
