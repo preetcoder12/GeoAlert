@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, ZoomControl } from 'react-leaflet';
 import { Bell, TrendingUp, MapPin, Flame, Waves, Wind, Globe, Shield, AlertTriangle, Activity, Download, ChevronDown, Info, Layers, Search, Zap, ThermometerSun, Target, BarChart2, Filter } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
-import * as THREE from 'three';
+import { ToastContainer, toast } from 'react-toastify';
 import axios from 'axios';
+import { useMap } from 'react-leaflet';
+import { useNavigate } from "react-router-dom";
+import MarkerClusterGroup from 'react-leaflet-cluster';
+import { debounce } from 'lodash';
 
 const HomePage = () => {
     const [activeDisasters, setActiveDisasters] = useState([]);
@@ -12,10 +16,11 @@ const HomePage = () => {
     const [categories, setCategories] = useState([]);
     const [disasterType, setDisasterType] = useState('all');
     const [userLocation, setUserLocation] = useState(null);
-    const [mapView, setMapView] = useState(null); // standard, satellite, terrain
-    const [mapTheme, setMapTheme] = useState('light'); // light, dark
+    const [mapView, setMapView] = useState(null);
+    const [mapTheme, setMapTheme] = useState('light');
     const [heatmapVisible, setHeatmapVisible] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState(null);
+    const [legend, setLegend] = useState(false);
     const [notifications, setNotifications] = useState([
         { id: 1, type: 'Wildfire', location: 'Uttarakhand Hills, India', severity: 'High', time: '10 mins ago' },
         { id: 2, type: 'Flood', location: 'Mumbai Suburbs, India', severity: 'Medium', time: '25 mins ago' },
@@ -27,80 +32,167 @@ const HomePage = () => {
     const [continent, setContinent] = useState('all');
     const [timeRange, setTimeRange] = useState('all');
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [bounds, setBounds] = useState(null);
+    const [visibleEvents, setVisibleEvents] = useState(50);
+    const [mapReady, setMapReady] = useState(false);
+    const [location, setLocation] = useState("");
     const mapRef = useRef(null);
+    const navigate = useNavigate();
+
+    const toggleLegend = () => {
+        setLegend(prev => !prev);
+    };
+
+    const updateBounds = (map) => {
+        if (map) {
+            setBounds(map.getBounds());
+        }
+    };
+
+    // Optimized event fetching with viewport filtering
+    const fetchEvents = useCallback(async () => {
+        try {
+            const params = {
+                disasterType: disasterType !== 'all' ? disasterType : undefined,
+                continent: continent !== 'all' ? continent : undefined,
+                timeRange: timeRange !== 'all' ? timeRange : undefined,
+                bounds: bounds ? [
+                    bounds.getSouthWest().lat,
+                    bounds.getSouthWest().lng,
+                    bounds.getNorthEast().lat,
+                    bounds.getNorthEast().lng
+                ] : undefined
+            };
+
+            const response = await axios.get(`http://localhost:8000/api/events`, { params });
+            if (response.data.events) {
+                setLiveEvents(response.data.events);
+            }
+            console.log(response.data.events)
+        } catch (error) {
+            console.error("Error fetching events:", error);
+            setMockData();
+        } finally {
+            setLoading(false);
+        }
+    }, [disasterType, continent, timeRange, bounds]);
+
+    const setMockData = () => {
+        setLiveEvents([
+            {
+                id: 1,
+                title: "California Wildfire",
+                description: "Major wildfire spreading in Northern California",
+                categories: [{ title: "Wildfires" }],
+                geometries: [{ coordinates: [-122.4194, 37.7749] }],
+                link: "#",
+                severity: "high",
+                date: "2023-06-15T08:30:00Z",
+                status: "Ongoing",
+                affectedArea: "5000 acres",
+                casualties: "None reported",
+                sources: ["NASA FIRMS", "CAL FIRE"]
+            },
+            {
+                id: 2,
+                title: "Mumbai Flooding",
+                description: "Severe flooding in Mumbai suburbs after heavy rainfall",
+                categories: [{ title: "Floods" }],
+                geometries: [{ coordinates: [72.8777, 19.0760] }],
+                link: "#",
+                severity: "medium",
+                date: "2023-06-14T14:45:00Z",
+                status: "Ongoing",
+                affectedArea: "Multiple districts",
+                casualties: "12 injured",
+                sources: ["NDMA", "Local Authorities"]
+            },
+            {
+                id: 3,
+                title: "Tokyo Earthquake",
+                description: "6.4 magnitude earthquake near Tokyo",
+                categories: [{ title: "Earthquakes" }],
+                geometries: [{ coordinates: [139.6503, 35.6762] }],
+                link: "#",
+                severity: "high",
+                date: "2023-06-13T03:22:00Z",
+                status: "Aftermath",
+                affectedArea: "Tokyo metropolitan area",
+                casualties: "3 fatalities, 24 injured",
+                sources: ["JMA", "USGS"]
+            },
+            {
+                id: 4,
+                title: "Hurricane Atlantic",
+                description: "Category 3 hurricane approaching East Coast",
+                categories: [{ title: "Storms" }],
+                geometries: [{ coordinates: [-80.1918, 25.7617] }],
+                link: "#",
+                severity: "high",
+                date: "2023-06-12T18:15:00Z",
+                status: "Approaching",
+                affectedArea: "Coastal regions",
+                casualties: "None yet",
+                sources: ["NOAA", "NHC"]
+            },
+            {
+                id: 5,
+                title: "Australian Drought",
+                description: "Extreme drought conditions affecting agriculture",
+                categories: [{ title: "Drought" }],
+                geometries: [{ coordinates: [151.2093, -33.8688] }],
+                link: "#",
+                severity: "medium",
+                date: "2023-06-10T00:00:00Z",
+                status: "Ongoing",
+                affectedArea: "New South Wales",
+                casualties: "Economic impact",
+                sources: ["BOM", "Local Reports"]
+            },
+        ]);
+    };
 
     // Fetch Disaster Events
     useEffect(() => {
-        const fetchEvents = async () => {
-            try {
-                const response = await axios.get(`http://localhost:8000/api/events`);
-                if (response.data.events) {
-                    setLiveEvents(response.data.events);
-                    console.log(response.data.events);
-                } else {
-                    console.error("Unexpected API response format:", response.data);
-                }
-            } catch (error) {
-                console.error("Error fetching events:", error);
-                // Use mock data if API fails
-                setMockData();
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        const setMockData = () => {
-            setLiveEvents([
-                {
-                    id: 1,
-                    title: "California Wildfire",
-                    description: "Major wildfire spreading in Northern California",
-                    categories: [{ title: "Wildfires" }],
-                    geometries: [{ coordinates: [-122.4194, 37.7749] }],
-                    link: "#",
-                    severity: "high"
-                },
-                {
-                    id: 2,
-                    title: "Mumbai Flooding",
-                    description: "Severe flooding in Mumbai suburbs after heavy rainfall",
-                    categories: [{ title: "Floods" }],
-                    geometries: [{ coordinates: [72.8777, 19.0760] }],
-                    link: "#",
-                    severity: "medium"
-                },
-                {
-                    id: 3,
-                    title: "Tokyo Earthquake",
-                    description: "6.4 magnitude earthquake near Tokyo",
-                    categories: [{ title: "Earthquakes" }],
-                    geometries: [{ coordinates: [139.6503, 35.6762] }],
-                    link: "#",
-                    severity: "high"
-                },
-                {
-                    id: 4,
-                    title: "Hurricane Atlantic",
-                    description: "Category 3 hurricane approaching East Coast",
-                    categories: [{ title: "Storms" }],
-                    geometries: [{ coordinates: [-80.1918, 25.7617] }],
-                    link: "#",
-                    severity: "high"
-                },
-                {
-                    id: 5,
-                    title: "Australian Drought",
-                    description: "Extreme drought conditions affecting agriculture",
-                    categories: [{ title: "Drought" }],
-                    geometries: [{ coordinates: [151.2093, -33.8688] }],
-                    link: "#",
-                    severity: "medium"
-                },
-            ]);
-        };
-
         fetchEvents();
-    }, []);
+    }, [fetchEvents]);
+
+    const getLocationFromCoords = async (lat, lon) => {
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+            const data = await response.json();
+            return data.display_name || "Unknown Location";
+        } catch (error) {
+            console.error("Error fetching location:", error);
+            return "Location not found";
+        }
+    };
+
+    useEffect(() => {
+        if (selectedEvent?.geometries?.[0]?.coordinates) {
+            const fetchLocation = async () => {
+                const loc = await getLocationFromCoords(
+                    selectedEvent.geometries[0].coordinates[1],
+                    selectedEvent.geometries[0].coordinates[0]
+                );
+                setLocation(loc);
+            };
+            fetchLocation();
+        }
+    }, [selectedEvent]);
+
+    const LimitMapBounds = () => {
+        const map = useMap();
+
+        useEffect(() => {
+            map.setMaxBounds([
+                [-85, -180],
+                [85, 180]
+            ]);
+        }, [map]);
+
+        return null;
+    };
 
     // Fetch Disaster Categories
     useEffect(() => {
@@ -111,7 +203,6 @@ const HomePage = () => {
                     setCategories(response.data.categories);
                 } else {
                     console.error("Unexpected API response format:", response.data);
-                    // Set default categories
                     setCategories([
                         { title: "Wildfires" },
                         { title: "Floods" },
@@ -124,7 +215,6 @@ const HomePage = () => {
                 }
             } catch (error) {
                 console.error("Error fetching categories:", error);
-                // Set default categories
                 setCategories([
                     { title: "Wildfires" },
                     { title: "Floods" },
@@ -138,6 +228,46 @@ const HomePage = () => {
         };
         fetchCategories();
     }, []);
+
+    const handleLogout = () => {
+        localStorage.removeItem("authToken");
+        navigate("/signup");
+    };
+
+    const getLocation = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    setLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+
+                    try {
+                        const response = await axios.get(
+                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+                        );
+
+                        if (response.data.display_name) {
+                            setLocation(response.data.display_name);
+                        } else {
+                            setLocation("Location Not Found");
+                        }
+                        toast.success("Location already set");
+
+                    } catch (error) {
+                        console.error("Geocoding Error: ", error);
+                        setLocation("Error Getting Location");
+                    }
+                },
+                (error) => {
+                    console.error("Geolocation Error:", error);
+                    toast.error("Please enable location permissions in your browser settings");
+                    setLocation("Permission Denied");
+                }
+            );
+        } else {
+            setLocation("Geolocation Not Supported");
+        }
+    };
 
     // Get user location
     useEffect(() => {
@@ -158,7 +288,6 @@ const HomePage = () => {
 
     // Mock active disaster data
     useEffect(() => {
-        // This would be an API call in production
         setTimeout(() => {
             setActiveDisasters([
                 // Asia
@@ -193,7 +322,7 @@ const HomePage = () => {
 
     // Get icon based on disaster type
     const getDisasterIcon = (type) => {
-        switch (type.toLowerCase()) {
+        switch (type?.toLowerCase()) {
             case 'wildfire':
             case 'wildfires':
                 return <Flame className="w-1 h-1 text-red-600" />;
@@ -224,6 +353,49 @@ const HomePage = () => {
         }
     };
 
+    const fetchDataAndExportCSV = async () => {
+        try {
+            const response = await fetch("http://localhost:8000/api/events");
+            console.log("Response status:", response.status);
+
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+            const data = await response.json();
+            console.log("API Response:", data); // Debugging step
+
+            if (!data.events || !Array.isArray(data.events)) {
+                console.error("Unexpected data format:", data);
+                alert("Unexpected data format from server.");
+                return;
+            }
+
+            if (data.events.length === 0) {
+                console.warn("No events data received from API.");
+                alert("No data available to export.");
+                return;
+            }
+
+            const headers = Object.keys(data.events[0]);
+            const csvRows = data.events.map(row => headers.map(header => row[header] ?? "").join(","));
+            const csvData = [headers.join(","), ...csvRows].join("\n");
+
+            const blob = new Blob([csvData], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "events_data.csv";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (error) {
+            console.error("Error fetching or exporting data:", error);
+        }
+    };
+
+
+
+
     const DisasterColor = (category) => {
         const categoryColors = {
             "Wildfires": { color: "#FF4500", radius: 18, pulseColor: "rgba(255, 69, 0, 0.3)" },
@@ -246,33 +418,25 @@ const HomePage = () => {
         }
     };
 
-    // Filter disasters based on selected filters
-    const filteredDisasters = liveEvents.filter((event) => {
-        // Filter by disaster type
-        const typeMatch = disasterType === 'all' ||
-            (event.categories && event.categories.some(cat => cat.title.toLowerCase() === disasterType));
-
-        // Filter by severity
-
-        return typeMatch
-    });
-
-    // Get MapBox URL based on selected view and theme
-    const getMapTileUrl = () => {
-        if (mapView === 'terrain') {
-            return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
-        } else {
-            // Standard view
-            return mapTheme === 'dark'
-                ? 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
-                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    // Format date for display
+    const formatDate = (dateString) => {
+        if (!dateString) return "Unknown";
+        try {
+            const date = new Date(dateString);
+            return isNaN(date.getTime()) ? "Invalid date" : date.toLocaleString();
+        } catch {
+            return "Unknown";
         }
     };
 
-    // Toggle fullscreen map
-    const toggleFullscreen = () => {
-        setIsFullscreen(!isFullscreen);
-    };
+    // Filter disasters based on selected filters
+    const filteredDisasters = useMemo(() => {
+        return liveEvents.filter((event) => {
+            const typeMatch = disasterType === 'all' ||
+                (event.categories && event.categories.some(cat => cat.title.toLowerCase() === disasterType));
+            return typeMatch;
+        });
+    }, [liveEvents, disasterType]);
 
     // Get severity color class
     const getSeverityColor = (severity) => {
@@ -288,6 +452,79 @@ const HomePage = () => {
         }
     };
 
+    // Memoized markers for better performance
+    const memoizedMarkers = useMemo(() => {
+        return filteredDisasters.map((disaster) => {
+            const coordinates = disaster.geometries[0]?.coordinates || [0, 0];
+            const markerStyle = DisasterColor(disaster.categories[0]?.title || "Unknown");
+            const severityModifier = getSeverityModifier(disaster.severity);
+
+            return (
+                <CircleMarker
+                    key={disaster.id}
+                    center={[coordinates[1], coordinates[0]]}
+                    radius={markerStyle.radius * severityModifier}
+                    pathOptions={{
+                        fillColor: markerStyle.color,
+                        color: markerStyle.color,
+                        weight: 1,
+                        opacity: 0.8,
+                        fillOpacity: 0.7,
+                    }}
+                    eventHandlers={{
+                        click: () => {
+                            setSelectedEvent({
+                                ...disaster,
+                                coordinates: coordinates // Store coordinates explicitly
+                            });
+                        },
+                    }}
+                >
+                    <Popup className="event-details-popup">
+                        <div className="max-w-xs">
+                            <div className="flex items-center mb-2">
+                                {getDisasterIcon(disaster.categories[0]?.title)}
+                                <h3 className="font-bold text-lg ml-2">{disaster.title}</h3>
+                            </div>
+                            <p className="text-gray-700 mb-2 text-sm">{disaster.description}</p>
+                            <div className="flex justify-between items-center">
+                                <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity)}`}>
+                                    {disaster.severity}
+                                </span>
+                                <button
+                                    className="text-blue-600 text-xs hover:underline"
+                                    onClick={() => {
+                                        setSelectedEvent({
+                                            ...disaster,
+                                            coordinates: coordinates
+                                        });
+                                    }}
+                                >
+                                    More details
+                                </button>
+                            </div>
+                        </div>
+                    </Popup>
+                </CircleMarker>
+            );
+        });
+    }, [filteredDisasters]);
+
+    // Get MapBox URL based on selected view and theme
+    const getMapTileUrl = () => {
+        if (mapView === 'terrain') {
+            return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+        } else {
+            return mapTheme === 'dark'
+                ? 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
+                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        }
+    };
+
+    // Toggle fullscreen map
+    const toggleFullscreen = () => {
+        setIsFullscreen(!isFullscreen);
+    };
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -312,13 +549,15 @@ const HomePage = () => {
                     </nav>
 
                     <div className="flex items-center space-x-2">
-                        <div className="bg-indigo-600 text-white px-3 py-1 rounded-md text-sm flex items-center mr-2">
-                            <Globe className="h-4 w-4 mr-1" />
-                            <span>Global</span>
-                        </div>
-                        <button className="bg-white text-indigo-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 transition">
-                            Report Emergency
+                        <button
+                            onClick={handleLogout}
+                            className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-500 text-white rounded-lg shadow-md font-semibold text-sm 
+               hover:from--600 hover:to-red-600 transition-all duration-300 ease-in-out 
+               active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-300"
+                        >
+                            Logout
                         </button>
+
                     </div>
                 </div>
             </header>
@@ -331,16 +570,17 @@ const HomePage = () => {
                         <h2 className="text-4xl font-bold mb-4">Global Disaster Monitoring & Alert System</h2>
                         <p className="text-xl mb-8">Track disasters worldwide in real-time with our advanced global monitoring platform. Set custom alerts for any region around the world.</p>
                         <div className="flex flex-wrap gap-4">
-                            <button className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
+                            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
                                 <Bell className="h-5 w-5 mr-2" />
                                 Enable Global Alerts
                             </button>
-                            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
+                            <button className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
                                 <Globe className="h-5 w-5 mr-2" />
-                                Worldwide Coverage
+                                <a href='/report' className="text-white">Report emergency</a>
                             </button>
-                            <button className="bg-transparent border border-white text-white px-6 py-3 rounded-md font-medium hover:bg-white hover:text-gray-900 transition">
-                                Set Your Locations
+                            <button onClick={getLocation}
+                                className="bg-transparent border border-white text-white px-6 py-3 rounded-md font-medium hover:bg-white hover:text-gray-900 transition">
+                                Set Your Location
                             </button>
                         </div>
                     </div>
@@ -394,8 +634,6 @@ const HomePage = () => {
                                 </div>
                             </div>
 
-
-
                             <div className="relative">
                                 <select
                                     value={timeRange}
@@ -429,7 +667,10 @@ const HomePage = () => {
                                 </span>
                             </div>
 
-                            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm flex items-center">
+                            <button
+                                onClick={fetchDataAndExportCSV}
+                                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm flex items-center"
+                            >
                                 <Download className="h-4 w-4 mr-1" />
                                 Export Data
                             </button>
@@ -449,13 +690,20 @@ const HomePage = () => {
                                 Disaster Monitoring Map
                             </h3>
                             <div className="text-sm text-gray-600">
-                                Showing {filteredDisasters.length} active disaster events
+                                Showing {filteredDisasters.length} live active disaster events
                             </div>
                         </div>
 
                         {/* Map View Controls */}
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex space-x-2">
+                                <button
+                                    onClick={toggleLegend}
+                                    className={`px-3 py-2 text-sm rounded-md flex items-center ${legend ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                >
+                                    <Layers className="h-4 w-4 mr-1" />
+                                    Legend
+                                </button>
                                 <button
                                     onClick={() => setMapView('standard')}
                                     className={`px-3 py-2 text-sm rounded-md flex items-center ${mapView === 'standard' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -510,12 +758,24 @@ const HomePage = () => {
                                     style={{ height: '100%', width: '100%' }}
                                     zoomControl={false}
                                     ref={mapRef}
+                                    worldCopyJump={false}
+                                    maxBounds={[[-85, -180], [85, 180]]}
+                                    maxBoundsViscosity={1.0}
+                                    dragging={true}
+                                    whenReady={({ target: map }) => {
+                                        updateBounds(map);
+                                        map.on('moveend', () => updateBounds(map));
+                                        setMapReady(true);
+                                    }}
                                 >
                                     <TileLayer
                                         url={getMapTileUrl()}
                                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                        subdomains={mapView === 'satellite' ? ['mt0', 'mt1', 'mt2', 'mt3'] : 'abc'}
+                                        subdomains={['a', 'b', 'c']}
+                                        noWrap={true}
                                     />
+
+                                    <LimitMapBounds />
                                     <ZoomControl position="bottomright" />
 
                                     {/* User Location Marker */}
@@ -533,46 +793,18 @@ const HomePage = () => {
                                         />
                                     )}
 
+                                    {mapReady && (
+                                        <MarkerClusterGroup
+                                            chunkedLoading
+                                            maxClusterRadius={60}
+                                            spiderfyOnMaxZoom={true}
+                                            showCoverageOnHover={true}
+                                        >
+                                            {memoizedMarkers}
+                                        </MarkerClusterGroup>
+                                    )}
 
-                                    {/* Disaster Markers */}
-                                    {filteredDisasters.map((disaster) => {
-                                        const coordinates = disaster.geometries[0]?.coordinates || [0, 0];
-                                        const markerStyle = DisasterColor(disaster.categories[0]?.title || "Unknown");
-                                        const severityModifier = getSeverityModifier(disaster.severity);
-
-                                        return (
-                                            <CircleMarker
-                                                key={disaster.id}
-                                                center={[coordinates[1], coordinates[0]]}
-                                                radius={markerStyle.radius * severityModifier}
-                                                pathOptions={{
-                                                    fillColor: markerStyle.color,
-                                                    color: markerStyle.color,
-                                                    weight: 1,
-                                                    opacity: 0.8,
-                                                    fillOpacity: 0.7,
-                                                }}
-                                                eventHandlers={{
-                                                    click: () => {
-                                                        setSelectedEvent(disaster);
-                                                    },
-                                                }}
-                                            >
-                                                <Popup>
-                                                    <div className="max-w-xs">
-                                                        <div className="flex items-center mb-2">
-                                                            {getDisasterIcon(disaster.categories[0]?.title)}
-                                                            <h3 className="font-bold text-lg ml-2">{disaster.title}</h3>
-                                                        </div>
-                                                        <p className="text-gray-700 mb-2">{disaster.description}</p>
-
-                                                    </div>
-                                                </Popup>
-                                            </CircleMarker>
-                                        );
-                                    })}
-
-                                    {/* Heatmap Layer (would be implemented with a proper heatmap library) */}
+                                    {/* Heatmap Layer */}
                                     {heatmapVisible && (
                                         <GeoJSON
                                             data={{
@@ -598,40 +830,167 @@ const HomePage = () => {
                                         />
                                     )}
                                 </MapContainer>
-
-                                {/* Search Box */}
-                                <div className="absolute top-4 left-4 z-[1000] bg-white p-2 rounded-md shadow-md">
-                                    <div className="flex items-center">
-                                        <Search className="h-5 w-5 text-gray-500 mr-2" />
-                                        <input
-                                            type="text"
-                                            placeholder="Search location..."
-                                            className="border-none outline-none text-gray-700 w-48"
-                                        />
+                                {legend && (
+                                    <div className="absolute bottom-4 left-4 z-[1000] bg-white p-3 rounded-md shadow-md">
+                                        <h4 className="font-medium text-gray-800 mb-2">Disaster Legend</h4>
+                                        <div className="space-y-2">
+                                            {categories.map((category) => {
+                                                const style = DisasterColor(category.title);
+                                                return (
+                                                    <div key={category.title} className="flex items-center">
+                                                        <div
+                                                            className="w-4 h-4 rounded-full mr-2"
+                                                            style={{ backgroundColor: style.color }}
+                                                        ></div>
+                                                        <span className="text-sm text-gray-700">{category.title}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
+                                )}
+                            </div>
+                        )}
+                        {/* Selected Event Details Card - Enhanced */}
+                        {selectedEvent && (
+                            <div className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 max-w-4xl mx-auto">
+                                {/* Header with elegant styling */}
+                                <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
+                                    <h3 className="text-2xl font-bold text-gray-800 flex items-center">
+                                        <Info className="w-6 h-6 mr-3 text-blue-600" />
+                                        Event Details
+                                    </h3>
+                                    <button
+                                        onClick={() => setSelectedEvent(null)}
+                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-50"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
                                 </div>
 
-                                {/* Legend */}
-                                <div className="absolute bottom-4 left-4 z-[1000] bg-white p-3 rounded-md shadow-md">
-                                    <h4 className="font-medium text-gray-800 mb-2">Disaster Legend</h4>
-                                    <div className="space-y-2">
-                                        {categories.map((category) => {
-                                            const style = DisasterColor(category.title);
-                                            return (
-                                                <div key={category.title} className="flex items-center">
-                                                    <div
-                                                        className="w-4 h-4 rounded-full mr-2"
-                                                        style={{ backgroundColor: style.color }}
-                                                    ></div>
-                                                    <span className="text-sm text-gray-700">{category.title}</span>
+                                <div className="space-y-8">
+                                    {/* Event headline with premium styling */}
+                                    <div className="flex items-start gap-5">
+                                        <div className={`p-5 rounded-2xl shadow-md ${getSeverityColor(selectedEvent.severity)}`}>
+                                            {getDisasterIcon(selectedEvent.categories[0]?.title)}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="font-bold text-3xl text-gray-800 mb-3">{selectedEvent.title}</h4>
+                                            <div className="flex items-center">
+                                                <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-blue-50 text-blue-700 font-medium text-sm">
+                                                    {selectedEvent.categories[0]?.title}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Content sections with premium card styling */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        {/* Description card */}
+                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                                </svg>
+                                                Description
+                                            </h5>
+                                            <p className="text-gray-700 leading-relaxed">{selectedEvent.description || "No description available"}</p>
+                                        </div>
+
+                                        {/* Location details card */}
+                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                                </svg>
+                                                Location Details
+                                            </h5>
+                                            <div className="space-y-3">
+                                                <div className="flex items-start">
+                                                    <span className="font-medium text-black w-32 inline-block">Coordinates:</span>
+                                                    <span className="text-gray-700">{selectedEvent.geometries?.[0]?.coordinates
+                                                        ? `${selectedEvent.geometries[0].coordinates[1].toFixed(4)}°, ${selectedEvent.geometries[0].coordinates[0].toFixed(4)}°`
+                                                        : "Unknown"}
+                                                    </span>
                                                 </div>
-                                            );
-                                        })}
+                                                <div className="flex items-start">
+                                                    <span className="font-medium text-black w-32 inline-block">Address:</span>
+                                                    <span className="text-black">{typeof location === 'string' ? location : "Loading location..."}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Event Information card */}
+                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                                </svg>
+                                                Event Information
+                                            </h5>
+                                            <div className="space-y-3">
+                                                <div className="flex items-start">
+                                                    <span className="font-medium text-black w-32 inline-block">Date:</span>
+                                                    <span className="text-gray-700">{formatDate(selectedEvent.geometries[0].date)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Data Sources card */}
+                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+                                                </svg>
+                                                Data Sources
+                                            </h5>
+                                            <div className="space-y-2">
+                                                {selectedEvent.sources && selectedEvent.sources.length > 0 ? (
+                                                    selectedEvent.sources.map((source, index) => (
+                                                        <div key={index} className="flex items-center mb-2">
+                                                            <span className="text-blue-600 mr-2">•</span>
+                                                            <a
+                                                                href={source.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                                            >
+                                                                {source.url}
+                                                            </a>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-gray-600 italic">No source information available</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action button with premium styling */}
+                                    <div className="flex justify-center pt-6">
+                                        <button
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl text-sm font-medium flex items-center transition-colors shadow-md hover:shadow-lg"
+                                            onClick={() => {
+                                                if (mapRef.current && selectedEvent.geometries?.[0]?.coordinates) {
+                                                    mapRef.current.flyTo(
+                                                        [selectedEvent.geometries[0].coordinates[1],
+                                                        selectedEvent.geometries[0].coordinates[0]],
+                                                        12
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            <Target className="h-5 w-5 mr-3" />
+                                            Zoom to Location
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                         )}
                     </div>
+
 
                     {/* Sidebar - Events and Notifications */}
                     <div className={`${isFullscreen ? 'hidden' : 'lg:w-1/3'} space-y-6`}>
@@ -645,379 +1004,360 @@ const HomePage = () => {
                                 <span className="text-sm text-gray-500">{filteredDisasters.length} events</span>
                             </div>
 
-                            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                                {filteredDisasters.length > 0 ? (
-                                    filteredDisasters.map((disaster) => {
-                                        const coordinates = disaster.geometries[0]?.coordinates || [0, 0];
-                                        const markerStyle = DisasterColor(disaster.categories[0]?.title || "Unknown");
+                            <div
+                                className="space-y-3 max-h-96 overflow-y-auto pr-2"
+                                onScroll={(e) => {
+                                    const { scrollTop, scrollHeight, clientHeight } = e.target;
+                                    if (scrollHeight - scrollTop === clientHeight) {
+                                        setVisibleEvents(prev => prev + 50);
+                                    }
+                                }}
+                            >
+                                {filteredDisasters.slice(0, visibleEvents).map((disaster) => {
+                                    const coordinates = disaster.geometries[0]?.coordinates || [0, 0];
+                                    const markerStyle = DisasterColor(disaster.categories[0]?.title || "Unknown");
 
-                                        return (
-                                            <div
-                                                key={disaster.id}
-                                                className={`p-3 rounded-lg border cursor-pointer hover:bg-gray-50 transition ${selectedEvent?.id === disaster.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
-                                                onClick={() => {
-                                                    setSelectedEvent(disaster);
-                                                    if (mapRef.current) {
-                                                        mapRef.current.flyTo([coordinates[1], coordinates[0]], 8);
-                                                    }
-                                                }}
-                                            >
-                                                <div className="flex justify-between items-start">
-                                                    <div className="flex items-start">
-                                                        <div className="p-1 rounded-full mr-3" style={{ backgroundColor: markerStyle.pulseColor }}>
+                                    return (
+                                        <div
+                                            key={disaster.id}
+                                            className={`p-3 rounded-lg border cursor-pointer hover:bg-gray-50 transition ${selectedEvent?.id === disaster.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
+                                            onClick={() => {
+                                                setSelectedEvent({
+                                                    ...disaster,
+                                                    coordinates: coordinates
+                                                });
+                                                if (mapRef.current) {
+                                                    mapRef.current.flyTo([coordinates[1], coordinates[0]], 8);
+                                                }
+                                            }}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex items-start">
+                                                    <div className="p-1 rounded-full mr-3" style={{ backgroundColor: markerStyle.pulseColor }}>
+                                                        <div
+                                                            className="w-8 h-8 rounded-full flex items-center justify-center"
+                                                            style={{ backgroundColor: markerStyle.color }}
+                                                        >
                                                             {getDisasterIcon(disaster.categories[0]?.title)}
                                                         </div>
-                                                        <div>
-                                                            <h4 className="font-medium text-gray-800">{disaster.title}</h4>
-                                                            <p className="text-sm text-gray-600">{'Unknown location'}</p>
-                                                        </div>
                                                     </div>
-
+                                                    <div className="ml-2">
+                                                        <h4 className="font-medium text-gray-800">{disaster.title}</h4>
+                                                        <p className="text-sm text-gray-600 line-clamp-2 mt-1">{disaster.description}</p>
+                                                    </div>
                                                 </div>
-                                                <p className="text-sm text-gray-700 mt-2 line-clamp-2">{disaster.description}</p>
-                                                <div className="flex justify-between items-center mt-2">
-                                                    <span className="text-xs text-gray-500">
-                                                        {new Date().toLocaleString()}
+                                                <div>
+                                                    <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity)}`}>
+                                                        {disaster.severity}
                                                     </span>
-                                                    <a
-                                                        href={disaster.link}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-xs text-blue-600 hover:underline"
-                                                    >
-                                                        Details
-                                                    </a>
                                                 </div>
                                             </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No active disasters matching your filters
+                                            <div className="flex justify-between mt-2 text-xs text-gray-500">
+                                                <span>Category: {disaster.categories[0]?.title}</span>
+                                                <a href={disaster.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                                    Source
+                                                </a>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {filteredDisasters.length === 0 && (
+                                    <div className="p-4 text-center">
+                                        <p className="text-gray-500">No disasters matching your filters</p>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        {/* Notifications Card */}
+
+
+
+                        {/* Recent Alerts Card */}
                         <div className="bg-white p-4 rounded-xl shadow-md">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-                                    <Bell className="w-5 h-5 mr-2 text-blue-600" />
+                                    <Bell className="w-5 h-5 mr-2 text-orange-600" />
                                     Recent Alerts
                                 </h3>
-                                <span className="text-sm text-gray-500">{notifications.length} notifications</span>
+                                <span className="text-sm text-gray-500">Last 24 hours</span>
                             </div>
 
-                            <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                            <div className="space-y-3 max-h-60 overflow-y-auto">
                                 {notifications.map((notification) => (
-                                    <div key={notification.id} className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
+                                    <div key={notification.id} className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition cursor-pointer">
                                         <div className="flex justify-between items-start">
                                             <div className="flex items-start">
-                                                <div className="p-1 rounded-full mr-3 bg-gray-100">
+                                                <div className={`p-2 rounded-full mr-3 ${getSeverityColor(notification.severity.toLowerCase())}`}>
                                                     {getDisasterIcon(notification.type)}
                                                 </div>
                                                 <div>
-                                                    <h4 className="font-medium text-gray-800">{notification.type}</h4>
-                                                    <p className="text-sm text-gray-600">{notification.location}</p>
+                                                    <h4 className="font-medium text-gray-800">
+                                                        {notification.type} Alert
+                                                    </h4>
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                        {notification.location}
+                                                    </p>
                                                 </div>
                                             </div>
-                                            <span className={`text-xs px-2 py-1 rounded-full ${getSeverityColor(notification.severity)}`}>
-                                                {notification.severity}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center mt-2">
-                                            <span className="text-xs text-gray-500">
-                                                {notification.time}
-                                            </span>
-                                            <button className="text-xs text-blue-600 hover:underline">
-                                                View
-                                            </button>
+                                            <span className="text-xs text-gray-500">{notification.time}</span>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        </div>
 
-                        {/* Statistics Card */}
-                        <div className="bg-white p-4 rounded-xl shadow-md">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-                                    <TrendingUp className="w-5 h-5 mr-2 text-green-600" />
-                                    Disaster Statistics
-                                </h3>
-                                <span className="text-sm text-gray-500">Last 30 days</span>
-                            </div>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-gray-700">Wildfires</span>
-                                        <span className="font-medium">24 incidents</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                        <div className="bg-red-600 h-2 rounded-full" style={{ width: '70%' }}></div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-gray-700">Floods</span>
-                                        <span className="font-medium">18 incidents</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                        <div className="bg-blue-600 h-2 rounded-full" style={{ width: '55%' }}></div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-gray-700">Earthquakes</span>
-                                        <span className="font-medium">12 incidents</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                        <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '35%' }}></div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-gray-700">Storms</span>
-                                        <span className="font-medium">8 incidents</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                        <div className="bg-purple-600 h-2 rounded-full" style={{ width: '25%' }}></div>
-                                    </div>
-                                </div>
-                            </div>
+                            <button className="mt-4 w-full text-blue-600 hover:text-blue-700 py-2 flex items-center justify-center font-medium text-sm">
+                                View All Alerts
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                                </svg>
+                            </button>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* Selected Event Modal */}
-            {selectedEvent && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[2000] p-4 animate-in fade-in duration-300">
-                    <div className="bg-white dark:bg-slate-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-slate-700">
-                        {/* Header with pulse animation for critical alerts */}
-                        <div className={`p-6 ${selectedEvent.severity === 'critical' ? 'bg-red-50 dark:bg-red-950/30' : ''}`}>
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex-1">
-                                    <div className="flex items-center">
-                                        <div className={`p-2 rounded-full ${selectedEvent.severity === 'critical' ? 'animate-pulse bg-red-100 dark:bg-red-900/40' : 'bg-gray-100 dark:bg-slate-800'}`}>
-                                            {getDisasterIcon(selectedEvent.categories[0]?.title)}
-                                        </div>
-                                        <h3 className="text-2xl font-bold ml-3 dark:text-white">{selectedEvent.title}</h3>
-                                    </div>
+            {/* Forecast and Trend Section */}
+            <section className="container mx-auto px-4 py-8">
+                <div className="bg-white p-6 rounded-xl shadow-md">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-semibold text-gray-800 flex items-center">
+                            <TrendingUp className="w-6 w-6 mr-2 text-indigo-600" />
+                            Disaster Forecast & Trends
+                        </h3>
+                        <div className="flex space-x-2">
+                            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm">
+                                Last 7 Days
+                            </button>
+                            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm">
+                                This Month
+                            </button>
+                            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-md text-sm">
+                                Year to Date
+                            </button>
+                        </div>
+                    </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div className="p-4 border border-gray-200 rounded-lg">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <span className="text-gray-500 text-sm">Total Active Events</span>
+                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">243</h4>
                                 </div>
-                                <button
-                                    onClick={() => setSelectedEvent(null)}
-                                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
-                                    aria-label="Close dialog"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-
-                            {/* Main content */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                {/* Left column with map and timeline */}
-                                <div className="space-y-4">
-                                    <div className="h-56 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 shadow-md">
-                                        <MapContainer
-                                            center={selectedEvent.geometries[0]?.coordinates ?
-                                                [selectedEvent.geometries[0].coordinates[1], selectedEvent.geometries[0].coordinates[0]] :
-                                                [20, 0]}
-                                            zoom={8}
-                                            style={{ height: '100%', width: '100%' }}
-                                            zoomControl={true}
-                                            attributionControl={false}
-                                        >
-                                            <TileLayer
-                                                url={getMapTileUrl()}
-                                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                            />
-                                            <CircleMarker
-                                                center={selectedEvent.geometries[0]?.coordinates ?
-                                                    [selectedEvent.geometries[0].coordinates[1], selectedEvent.geometries[0].coordinates[0]] :
-                                                    [20, 0]}
-                                                radius={10}
-                                                pathOptions={{
-                                                    fillColor: '#ef4444',
-                                                    color: '#b91c1c',
-                                                    weight: 2,
-                                                    opacity: 1,
-                                                    fillOpacity: 0.8
-                                                }}
-                                            />
-                                            {/* Add radius circle for impact zone - if data available */}
-                                            {selectedEvent.impactRadius && (
-                                                <Circle
-                                                    center={[selectedEvent.geometries[0].coordinates[1], selectedEvent.geometries[0].coordinates[0]]}
-                                                    radius={selectedEvent.impactRadius * 1000}
-                                                    pathOptions={{
-                                                        color: '#dc2626',
-                                                        weight: 1,
-                                                        opacity: 0.6,
-                                                        fillOpacity: 0.2
-                                                    }}
-                                                />
-                                            )}
-                                        </MapContainer>
-                                    </div>
-
-                                    {/* Timeline of event updates - if multiple geometries/timestamps exist */}
-                                    {selectedEvent.geometries.length > 1 && (
-                                        <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-4">
-                                            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Event Timeline</h4>
-                                            <div className="relative pl-6 space-y-3 max-h-32 overflow-y-auto">
-                                                <div className="absolute h-full w-0.5 bg-gray-200 dark:bg-gray-700 left-2"></div>
-                                                {selectedEvent.geometries.map((geo, index) => (
-                                                    <div key={index} className="relative">
-                                                        <div className="absolute w-3 h-3 rounded-full bg-blue-500 -left-5 top-1.5 z-10"></div>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                            {new Date(geo.date).toLocaleString("en-US", {
-                                                                month: "short",
-                                                                day: "numeric",
-                                                                hour: "2-digit",
-                                                                minute: "2-digit",
-                                                            })}
-                                                        </p>
-                                                        <p className="text-sm">
-                                                            {index === 0 ? 'Event first reported' : `Update ${index}`}
-                                                        </p>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Right column with details */}
-                                <div className="space-y-5">
-                                    <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl">
-                                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</h4>
-                                        <p className="text-gray-800 dark:text-gray-200">{selectedEvent?.description || "No description available"}</p>
-                                    </div>
-
-                                    <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl">
-                                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Details</h4>
-                                        <div className="space-y-3">
-                                            <div className="flex justify-between">
-                                                <span className="text-sm text-gray-500 dark:text-gray-400">Category</span>
-                                                <p className="font-medium text-gray-800 dark:text-gray-200">{selectedEvent.categories[0]?.title || 'Unknown'}</p>
-                                            </div>
-
-                                            <div className="flex justify-between">
-                                                <span className="text-sm text-gray-500 dark:text-gray-400">Reported</span>
-                                                <p className="font-medium text-gray-800 dark:text-gray-200">
-                                                    {new Date(selectedEvent.geometries[0].date).toLocaleString("en-US", {
-                                                        month: "long",
-                                                        day: "numeric",
-                                                        hour: "2-digit",
-                                                        minute: "2-digit",
-                                                        hour12: true
-                                                    })}
-                                                </p>
-                                            </div>
-
-                                            <div className="flex justify-between">
-                                                <span className="text-sm text-gray-500 dark:text-gray-400">Coordinates</span>
-                                                <p className="font-medium text-gray-800 dark:text-gray-200">
-                                                    {selectedEvent.geometries[0].coordinates[1].toFixed(4)}°, {selectedEvent.geometries[0].coordinates[0].toFixed(4)}°
-                                                </p>
-                                            </div>
-
-                                            <div className="pt-1">
-                                                <span className="text-sm text-gray-500 dark:text-gray-400">Source</span>
-                                                <a
-                                                    href={selectedEvent.sources[0].url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center mt-1 font-medium"
-                                                >
-                                                    View official report
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                    </svg>
-                                                </a>
-                                            </div>
-                                        </div>
-                                    </div>
+                                <div className="p-2 bg-green-100 rounded-md">
+                                    <Activity className="h-6 w-6 text-green-600" />
                                 </div>
                             </div>
+                            <div className="flex items-center mt-2">
+                                <span className="text-green-600 text-sm font-medium">+12.5%</span>
+                                <span className="text-gray-500 text-sm ml-2">from last month</span>
+                            </div>
+                        </div>
 
-                            {/* Safety Recommendations with adaptive content based on disaster type */}
-                            <div className="border-t border-gray-200 dark:border-slate-700 pt-5">
-                                <div className="flex items-center mb-3">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <h4 className="font-semibold text-gray-800 dark:text-white">Safety Recommendations</h4>
+                        <div className="p-4 border border-gray-200 rounded-lg">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <span className="text-gray-500 text-sm">Highest Activity</span>
+                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">Wildfires</h4>
                                 </div>
-                                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl">
-                                    <ul className="list-disc pl-5 space-y-2 text-gray-700 dark:text-gray-300">
-                                        <li>Follow local authority instructions and evacuation orders</li>
-                                        <li>Prepare emergency supplies if in affected area</li>
-                                        <li>Monitor official updates through emergency broadcast systems</li>
-                                        <li>Avoid unnecessary travel to impacted regions</li>
-                                        {selectedEvent.categories[0]?.title === 'Wildfire' && (
-                                            <>
-                                                <li>Keep windows and doors closed to prevent smoke inhalation</li>
-                                                <li>Prepare important documents and medications for possible evacuation</li>
-                                            </>
-                                        )}
-                                        {selectedEvent.categories[0]?.title === 'Severe Storm' && (
-                                            <>
-                                                <li>Stay indoors and away from windows during high winds</li>
-                                                <li>Prepare for potential power outages with flashlights and batteries</li>
-                                            </>
-                                        )}
-                                    </ul>
+                                <div className="p-2 bg-red-100 rounded-md">
+                                    <Flame className="h-6 w-6 text-red-600" />
                                 </div>
                             </div>
+                            <div className="flex items-center mt-2">
+                                <span className="text-red-600 text-sm font-medium">+28.7%</span>
+                                <span className="text-gray-500 text-sm ml-2">increase in incidents</span>
+                            </div>
+                        </div>
 
-                            {/* Action buttons with improved styling and accessibility */}
-                            <div className="flex flex-wrap gap-3 mt-6 sm:justify-between">
-                                <div className="flex gap-2">
-                                    <button
-                                        className="px-3 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-200 dark:border-slate-700 text-sm font-medium flex items-center"
-                                        title="Save this alert to your bookmarks"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                                        </svg>
-                                        Save
-                                    </button>
-                                    <button
-                                        className="px-3 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-200 dark:border-slate-700 text-sm font-medium flex items-center"
-                                        title="Share this alert with others"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                                        </svg>
-                                        Share
-                                    </button>
+                        <div className="p-4 border border-gray-200 rounded-lg">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <span className="text-gray-500 text-sm">Most Affected Region</span>
+                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">Asia Pacific</h4>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button className="px-4 py-2 bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition border border-blue-200 dark:border-blue-800 text-sm font-medium">
-                                        View Resources
-                                    </button>
-                                    <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
-                                        </svg>
-                                        Get Help
-                                    </button>
+                                <div className="p-2 bg-blue-100 rounded-md">
+                                    <Globe className="h-6 w-6 text-blue-600" />
                                 </div>
+                            </div>
+                            <div className="flex items-center mt-2">
+                                <span className="text-blue-600 text-sm font-medium">118 events</span>
+                                <span className="text-gray-500 text-sm ml-2">in the past month</span>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border border-gray-200 rounded-lg">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <span className="text-gray-500 text-sm">Alert Response Time</span>
+                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">5.3 min</h4>
+                                </div>
+                                <div className="p-2 bg-purple-100 rounded-md">
+                                    <Zap className="h-6 w-6 text-purple-600" />
+                                </div>
+                            </div>
+                            <div className="flex items-center mt-2">
+                                <span className="text-green-600 text-sm font-medium">-1.2 min</span>
+                                <span className="text-gray-500 text-sm ml-2">improvement</span>
                             </div>
                         </div>
                     </div>
+
+                    {/* Chart placeholder - would be implemented with real charting library */}
+                    <div className="mt-8 bg-gray-50 p-6 rounded-lg h-64 flex items-center justify-center">
+                        <div className="text-center text-gray-500">
+                            <BarChart2 className="h-10 w-10 mx-auto mb-3 text-gray-400" />
+                            <p>Interactive disaster trend chart would be rendered here</p>
+                            <p className="text-sm mt-2">Using historical data and real-time analysis</p>
+                        </div>
+                    </div>
                 </div>
-            )}
+            </section>
+
+            {/* Safety Resources */}
+            <section className="container mx-auto px-4 py-8">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-2xl font-semibold text-gray-800 flex items-center">
+                        <Shield className="w-6 w-6 mr-2 text-green-600" />
+                        Safety Resources & Guides
+                    </h3>
+                    <button className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center">
+                        View All Resources
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="bg-white p-5 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition">
+                        <div className="bg-red-100 p-3 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+                            <Flame className="w-6 w-6 text-red-600" />
+                        </div>
+                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Wildfire Safety Guide</h4>
+                        <p className="text-gray-600 mb-4">Learn essential survival tactics and evacuation procedures during wildfire emergencies.</p>
+                        <button className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center">
+                            Read Safety Guide
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition">
+                        <div className="bg-blue-100 p-3 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+                            <Waves className="w-6 w-6 text-blue-600" />
+                        </div>
+                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Flood Preparedness</h4>
+                        <p className="text-gray-600 mb-4">Comprehensive guide to prepare your home and family for potential flooding situations.</p>
+                        <button className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center">
+                            Read Safety Guide
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition">
+                        <div className="bg-yellow-100 p-3 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+                            <Activity className="w-6 w-6 text-yellow-600" />
+                        </div>
+                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Earthquake Safety</h4>
+                        <p className="text-gray-600 mb-4">Vital information on what to do before, during, and after an earthquake strikes.</p>
+                        <button className="text-yellow-600 hover:text-yellow-700 text-sm font-medium flex items-center">
+                            Read Safety Guide
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            {/* Footer */}
+            <footer className="bg-gray-900 text-white py-12">
+                <div className="container mx-auto px-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                        <div>
+                            <div className="flex items-center mb-4">
+                                <Globe className="h-8 w-8 text-blue-400 mr-2" />
+                                <h2 className="text-xl font-bold">Geo Alert</h2>
+                            </div>
+                            <p className="text-gray-400 mb-4">
+                                Global disaster monitoring and alert system providing real-time updates on natural disasters worldwide.
+                            </p>
+                            <div className="flex space-x-4">
+                                <a href="#" className="text-gray-400 hover:text-white transition">
+                                    <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z" />
+                                    </svg>
+                                </a>
+                                <a href="#" className="text-gray-400 hover:text-white transition">
+                                    <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+                                    </svg>
+                                </a>
+                                <a href="#" className="text-gray-400 hover:text-white transition">
+                                    <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+                                    </svg>
+                                </a>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
+                            <ul className="space-y-2">
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Dashboard</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Report Incident</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Global Alerts</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Resources</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Analytics</a></li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Resources</h3>
+                            <ul className="space-y-2">
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Disaster Preparedness</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Emergency Contacts</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Training Materials</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">API Documentation</a></li>
+                                <li><a href="#" className="text-gray-400 hover:text-white transition">Community Support</a></li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Subscribe to Alerts</h3>
+                            <p className="text-gray-400 mb-4">Get emergency alerts and disaster notifications straight to your inbox.</p>
+                            <form className="flex">
+                                <input
+                                    type="email"
+                                    placeholder="Your email"
+                                    className="px-4 py-2 w-full rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                                />
+                                <button
+                                    type="submit"
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md transition"
+                                >
+                                    Subscribe
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
+                        <p className="text-gray-400">© 2025 Geo Alert. All rights reserved.</p>
+                        <div className="flex space-x-6 mt-4 md:mt-0">
+                            <a href="#" className="text-gray-400 hover:text-white transition">Privacy Policy</a>
+                            <a href="#" className="text-gray-400 hover:text-white transition">Terms of Service</a>
+                            <a href="#" className="text-gray-400 hover:text-white transition">Cookie Policy</a>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+
+            <ToastContainer position="bottom-right" />
         </div>
     );
 };

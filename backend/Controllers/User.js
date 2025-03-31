@@ -78,17 +78,25 @@ const UserLogin = async (req, res) => {
             return res.status(401).json({ error: "Incorrect password" });
         }
 
-        const token = jwt.sign({ userId: existing_user._id }, process.env.JWT_SECRET, {
-            expiresIn: "1h",
-        });
+        // Instead of JWT, send user ID as token
+        const token = existing_user._id.toString();
 
-        return res.status(200).json({ message: "Login successful", token });
+        return res.status(200).json({
+            message: "User logged in successfully",
+            token,  // Now, token is just the user ID
+            user: {
+                id: existing_user._id,
+                email: existing_user.email
+            }
+        });
 
     } catch (error) {
         console.error("Error during login:", error.message);
         return res.status(500).json({ error: "Internal Server Error" });
     }
 };
+
+
 
 
 module.exports = { UserSignup, UserLogin };
