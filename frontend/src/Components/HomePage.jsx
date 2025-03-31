@@ -7,7 +7,9 @@ import axios from 'axios';
 import { useMap } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
 import MarkerClusterGroup from 'react-leaflet-cluster';
-import { debounce } from 'lodash';
+import { CiLogout } from "react-icons/ci";
+import { FaLocationDot } from "react-icons/fa6";
+
 
 const HomePage = () => {
     const [activeDisasters, setActiveDisasters] = useState([]);
@@ -48,6 +50,11 @@ const HomePage = () => {
             setBounds(map.getBounds());
         }
     };
+
+
+
+
+
 
     // Optimized event fetching with viewport filtering
     const fetchEvents = useCallback(async () => {
@@ -91,7 +98,9 @@ const HomePage = () => {
                 status: "Ongoing",
                 affectedArea: "5000 acres",
                 casualties: "None reported",
-                sources: ["NASA FIRMS", "CAL FIRE"]
+                sources: ["NASA FIRMS", "CAL FIRE"],
+                continent: "north_america" // Add this
+
             },
             {
                 id: 2,
@@ -105,7 +114,9 @@ const HomePage = () => {
                 status: "Ongoing",
                 affectedArea: "Multiple districts",
                 casualties: "12 injured",
-                sources: ["NDMA", "Local Authorities"]
+                sources: ["NDMA", "Local Authorities"],
+                continent: "asia" // Add this
+
             },
             {
                 id: 3,
@@ -119,7 +130,9 @@ const HomePage = () => {
                 status: "Aftermath",
                 affectedArea: "Tokyo metropolitan area",
                 casualties: "3 fatalities, 24 injured",
-                sources: ["JMA", "USGS"]
+                sources: ["JMA", "USGS"],
+                continent: "asia" // Add this
+
             },
             {
                 id: 4,
@@ -133,7 +146,9 @@ const HomePage = () => {
                 status: "Approaching",
                 affectedArea: "Coastal regions",
                 casualties: "None yet",
-                sources: ["NOAA", "NHC"]
+                sources: ["NOAA", "NHC"],
+                continent: "north_america" // Add this
+
             },
             {
                 id: 5,
@@ -147,7 +162,9 @@ const HomePage = () => {
                 status: "Ongoing",
                 affectedArea: "New South Wales",
                 casualties: "Economic impact",
-                sources: ["BOM", "Local Reports"]
+                sources: ["BOM", "Local Reports"],
+                continent: "north_america" // Add this
+
             },
         ]);
     };
@@ -293,33 +310,19 @@ const HomePage = () => {
                 // Asia
                 { id: 1, type: 'wildfire', lat: 28.7041, lng: 77.1025, severity: 'high', location: 'Delhi Outskirts, India', continent: 'asia' },
                 { id: 2, type: 'flood', lat: 19.0760, lng: 72.8777, severity: 'medium', location: 'Mumbai Suburbs, India', continent: 'asia' },
-                { id: 3, type: 'earthquake', lat: 26.8467, lng: 80.9462, severity: 'low', location: 'Lucknow, India', continent: 'asia' },
-                { id: 4, type: 'storm', lat: 13.0827, lng: 80.2707, severity: 'high', location: 'Chennai Coast, India', continent: 'asia' },
-                { id: 5, type: 'earthquake', lat: 35.6762, lng: 139.6503, severity: 'high', location: 'Tokyo, Japan', continent: 'asia' },
-                { id: 6, type: 'tsunami', lat: -8.3405, lng: 115.0920, severity: 'high', location: 'Bali, Indonesia', continent: 'asia' },
-
                 // North America
                 { id: 7, type: 'wildfire', lat: 34.0522, lng: -118.2437, severity: 'medium', location: 'Los Angeles, USA', continent: 'north_america' },
-                { id: 8, type: 'hurricane', lat: 25.7617, lng: -80.1918, severity: 'high', location: 'Miami, USA', continent: 'north_america' },
-                { id: 9, type: 'tornado', lat: 41.8781, lng: -87.6298, severity: 'medium', location: 'Chicago, USA', continent: 'north_america' },
-
                 // Europe
                 { id: 10, type: 'flood', lat: 48.8566, lng: 2.3522, severity: 'medium', location: 'Paris, France', continent: 'europe' },
-                { id: 11, type: 'storm', lat: 51.5074, lng: -0.1278, severity: 'low', location: 'London, UK', continent: 'europe' },
-
                 // Africa
                 { id: 12, type: 'drought', lat: -1.2921, lng: 36.8219, severity: 'high', location: 'Nairobi, Kenya', continent: 'africa' },
-                { id: 13, type: 'flood', lat: 30.0444, lng: 31.2357, severity: 'medium', location: 'Cairo, Egypt', continent: 'africa' },
-
                 // South America
                 { id: 14, type: 'landslide', lat: -22.9068, lng: -43.1729, severity: 'high', location: 'Rio de Janeiro, Brazil', continent: 'south_america' },
-
-                // Australia/Oceania
+                // Oceania
                 { id: 15, type: 'cyclone', lat: -33.8688, lng: 151.2093, severity: 'high', location: 'Sydney, Australia', continent: 'oceania' },
             ]);
         }, 1500);
     }, []);
-
     // Get icon based on disaster type
     const getDisasterIcon = (type) => {
         switch (type?.toLowerCase()) {
@@ -393,9 +396,6 @@ const HomePage = () => {
         }
     };
 
-
-
-
     const DisasterColor = (category) => {
         const categoryColors = {
             "Wildfires": { color: "#FF4500", radius: 18, pulseColor: "rgba(255, 69, 0, 0.3)" },
@@ -418,6 +418,16 @@ const HomePage = () => {
         }
     };
 
+    const [time, setTime] = useState(Date.now());
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setTime(Date.now());
+        }, 1000); // Updates every second
+
+        return () => clearInterval(interval); // Cleanup on unmount
+    }, []);
+
     // Format date for display
     const formatDate = (dateString) => {
         if (!dateString) return "Unknown";
@@ -428,15 +438,24 @@ const HomePage = () => {
             return "Unknown";
         }
     };
-
-    // Filter disasters based on selected filters
     const filteredDisasters = useMemo(() => {
         return liveEvents.filter((event) => {
+            // Match disaster type
             const typeMatch = disasterType === 'all' ||
-                (event.categories && event.categories.some(cat => cat.title.toLowerCase() === disasterType));
-            return typeMatch;
+                (event.categories && event.categories.some(cat =>
+                    cat.title.toLowerCase() === disasterType
+                ));
+
+            // Match continent - handle both activeDisasters and liveEvents structures
+            const continentMatch = continent === 'all' ||
+                (event.continent && event.continent.toLowerCase() === continent) ||
+                (event.location && event.location.continent && event.location.continent.toLowerCase() === continent);
+
+            return typeMatch && continentMatch;
         });
-    }, [liveEvents, disasterType]);
+    }, [liveEvents, disasterType, continent]);
+
+
 
     // Get severity color class
     const getSeverityColor = (severity) => {
@@ -529,46 +548,63 @@ const HomePage = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            <header className="bg-gradient-to-r from-blue-800 to-indigo-900 shadow-lg">
-                <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+            <header className="bg-gradient-to-r from-blue-900 via-indigo-800 to-purple-900 shadow-lg">
+                <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+                    {/* Logo & Title */}
                     <div className="flex items-center">
-                        <Globe className="h-8 w-8 text-white mr-2" />
-                        <h1 className="text-2xl font-bold text-white">Geo Alert</h1>
-                        <div className="ml-2 bg-red-500 text-white px-2 py-1 rounded-md text-xs flex items-center">
-                            <div className="w-1 h-1 bg-white rounded-full mr-1 animate-ping"></div>
+                        <Globe className="h-8 w-8 text-green-400 mr-2" />
+                        <h1 className="text-2xl font-extrabold text-white tracking-wide">Geo Alert</h1>
+
+                        {/* Live Indicator */}
+                        <div className="ml-3 bg-red-600 text-white px-2 py-1 rounded-md text-xs flex items-center shadow-lg">
+                            <div className="w-2 h-2 bg-white rounded-full mr-1 animate-ping"></div>
                             LIVE
                         </div>
+
+                        {/* Live Time */}
+                        <h1 className="text-white ml-4 text-sm font-medium bg-black bg-opacity-30 px-3 py-1 rounded-lg">
+                            {new Date(time).toLocaleString()}
+                        </h1>
                     </div>
 
+                    {/* Navigation Links */}
                     <nav className="hidden md:flex space-x-6">
-                        <a href="#" className="text-white hover:text-blue-200 transition">Dashboard</a>
-                        <a href="#" className="text-white hover:text-blue-200 transition">Report Incident</a>
-                        <a href="#" className="text-white hover:text-blue-200 transition">Global Alerts</a>
-                        <a href="#" className="text-white hover:text-blue-200 transition">Resources</a>
-                        <a href="#" className="text-white hover:text-blue-200 transition">Analytics</a>
+                        {["Dashboard", "Report Incident", "Global Alerts", "Resources", "Analytics"].map((item) => (
+                            <a
+                                key={item}
+                                href="#"
+                                className="text-white text-sm font-medium tracking-wide hover:text-green-300 transition duration-300 ease-in-out"
+                            >
+                                {item}
+                            </a>
+                        ))}
                     </nav>
 
-                    <div className="flex items-center space-x-2">
-                        <button
-                            onClick={handleLogout}
-                            className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-500 text-white rounded-lg shadow-md font-semibold text-sm 
-               hover:from--600 hover:to-red-600 transition-all duration-300 ease-in-out 
-               active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-300"
-                        >
-                            Logout
-                        </button>
+                    {/* Logout Button */}
+                    <button
+                        onClick={handleLogout}
+                        className="px-5 py-2 bg-gradient-to-r from-red-500 to-orange-600 text-white rounded-lg shadow-lg font-semibold text-sm
+             hover:from-red-600 hover:to-orange-700 transition-all duration-300 ease-in-out 
+             active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-300 flex items-center space-x-2"
+                    >
+                        <CiLogout className="text-white text-lg" />
+                        <span>Logout</span>
+                    </button>
 
-                    </div>
+
                 </div>
             </header>
+
 
             {/* Hero Section */}
             <section className="relative bg-gray-900 text-white py-16">
                 <div className="absolute inset-0 bg-black opacity-50"></div>
                 <div className="container mx-auto px-4 relative z-10">
                     <div className="max-w-3xl">
-                        <h2 className="text-4xl font-bold mb-4">Global Disaster Monitoring & Alert System</h2>
-                        <p className="text-xl mb-8">Track disasters worldwide in real-time with our advanced global monitoring platform. Set custom alerts for any region around the world.</p>
+                        <h2 className="text-4xl font-bold mb-4 text-white">
+                            Global Disaster <span className="text-green-400">Monitoring & Alert System</span>
+                        </h2>
+                        <p className="text-xl mb-8">Track global disasters in real-time, receive instant alerts, and stay prepared with our advanced monitoring and customized region-based notifications.🌍</p>
                         <div className="flex flex-wrap gap-4">
                             <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
                                 <Bell className="h-5 w-5 mr-2" />
@@ -578,10 +614,16 @@ const HomePage = () => {
                                 <Globe className="h-5 w-5 mr-2" />
                                 <a href='/report' className="text-white">Report emergency</a>
                             </button>
-                            <button onClick={getLocation}
-                                className="bg-transparent border border-white text-white px-6 py-3 rounded-md font-medium hover:bg-white hover:text-gray-900 transition">
-                                Set Your Location
+                            <button
+                                onClick={getLocation}
+                                className="flex items-center space-x-2 bg-transparent border border-white text-white px-6 py-3 rounded-md font-medium 
+             hover:bg-white hover:text-gray-900 transition duration-300 ease-in-out 
+             active:scale-95 focus:outline-none focus:ring-2 focus:ring-white"
+                            >
+                                <FaLocationDot className="text-lg" />
+                                <span>Set Your Location</span>
                             </button>
+
                         </div>
                     </div>
                 </div>
@@ -598,19 +640,25 @@ const HomePage = () => {
                             </div>
 
                             <div className="relative">
-                                <select
-                                    value={continent}
-                                    onChange={(e) => setContinent(e.target.value)}
-                                    className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
-                                >
-                                    <option value="all">All Continents</option>
-                                    <option value="asia">Asia</option>
-                                    <option value="africa">Africa</option>
-                                    <option value="north_america">North America</option>
-                                    <option value="south_america">South America</option>
-                                    <option value="europe">Europe</option>
-                                    <option value="oceania">Australia/Oceania</option>
-                                </select>
+                                <div className="relative">
+                                    <select
+                                        value={continent}
+                                        onChange={(e) => setContinent(e.target.value)}
+                                        className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
+                                    >
+                                        <option value="all">All Continents</option>
+                                        <option value="asia">Asia</option>
+                                        <option value="africa">Africa</option>
+                                        <option value="north_america">North America</option>
+                                        <option value="south_america">South America</option>
+                                        <option value="europe">Europe</option>
+                                        <option value="oceania">Oceania</option>
+                                    </select>
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                        <ChevronDown className="h-4 w-4" />
+                                    </div>
+                                </div>
+
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
                                     <ChevronDown className="h-4 w-4" />
                                 </div>
@@ -1282,6 +1330,7 @@ const HomePage = () => {
                             <div className="flex items-center mb-4">
                                 <Globe className="h-8 w-8 text-blue-400 mr-2" />
                                 <h2 className="text-xl font-bold">Geo Alert</h2>
+
                             </div>
                             <p className="text-gray-400 mb-4">
                                 Global disaster monitoring and alert system providing real-time updates on natural disasters worldwide.
@@ -1357,7 +1406,12 @@ const HomePage = () => {
                 </div>
             </footer>
 
-            <ToastContainer position="bottom-right" />
+            <ToastContainer
+                position="bottom-right"
+                theme="dark"
+                toastStyle={{ backgroundColor: "#1b1b1b", color: "#0f0", border: "1px solid #0f0" }}
+                progressStyle={{ background: "#0f0" }}
+            />
         </div>
     );
 };
