@@ -1,7 +1,35 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, ZoomControl } from 'react-leaflet';
-import { Bell, TrendingUp, MapPin, Flame, Waves, Wind, Globe, Shield, AlertTriangle, Activity, Download, ChevronDown, Info, Layers, Search, Zap, ThermometerSun, Target, BarChart2, Filter } from 'lucide-react';
-import 'leaflet/dist/leaflet.css';
+import {
+    Bell,
+    TrendingUp,
+    MapPin,
+    Flame,
+    Waves,
+    Wind,
+    Globe,
+    Shield,
+    AlertTriangle,
+    Activity,
+    Download,
+    ChevronDown,
+    Info,
+    Layers,
+    Search,
+    Zap,
+    ThermometerSun,
+    Target,
+    BarChart2,
+    Filter,
+    Mail,
+    Phone,
+    Twitter,
+    Facebook,
+    Linkedin,
+    Github,
+    ExternalLink,
+    Share2
+} from 'lucide-react'; import 'leaflet/dist/leaflet.css';
 import { ToastContainer, toast } from 'react-toastify';
 import axios from 'axios';
 import { useMap } from 'react-leaflet';
@@ -18,7 +46,7 @@ const HomePage = () => {
     const [categories, setCategories] = useState([]);
     const [disasterType, setDisasterType] = useState('all');
     const [userLocation, setUserLocation] = useState(null);
-    const [mapView, setMapView] = useState(null);
+    const [mapView, setMapView] = useState('standard');
     const [mapTheme, setMapTheme] = useState('light');
     const [heatmapVisible, setHeatmapVisible] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState(null);
@@ -51,41 +79,39 @@ const HomePage = () => {
         }
     };
 
-
-
-
-
-
     // Optimized event fetching with viewport filtering
     const fetchEvents = useCallback(async () => {
         try {
-            const params = {
-                disasterType: disasterType !== 'all' ? disasterType : undefined,
-                continent: continent !== 'all' ? continent : undefined,
-                timeRange: timeRange !== 'all' ? timeRange : undefined,
-                bounds: bounds ? [
-                    bounds.getSouthWest().lat,
-                    bounds.getSouthWest().lng,
-                    bounds.getNorthEast().lat,
-                    bounds.getNorthEast().lng
-                ] : undefined
-            };
-
-            const response = await axios.get(`http://localhost:8000/api/events`, { params });
+            const response = await axios.get(`http://localhost:8000/api/events`);
             if (response.data.events) {
-                setLiveEvents(response.data.events);
+                const eventsWithContinent = response.data.events.map(event => {
+                    // If continent is already defined, keep it
+                    if (event.continent) return event;
+
+                    // Otherwise calculate from coordinates
+                    if (event.geometries?.[0]?.coordinates) {
+                        const [lng, lat] = event.geometries[0].coordinates;
+                        return {
+                            ...event,
+                            continent: getContinentFromCoords(lat, lng)
+                        };
+                    }
+                    return event;
+                });
+                setLiveEvents(eventsWithContinent);
             }
-            console.log(response.data.events)
         } catch (error) {
             console.error("Error fetching events:", error);
             setMockData();
         } finally {
             setLoading(false);
         }
-    }, [disasterType, continent, timeRange, bounds]);
+    }, []);
+
+
 
     const setMockData = () => {
-        setLiveEvents([
+        const mockEvents = [
             {
                 id: 1,
                 title: "California Wildfire",
@@ -99,74 +125,24 @@ const HomePage = () => {
                 affectedArea: "5000 acres",
                 casualties: "None reported",
                 sources: ["NASA FIRMS", "CAL FIRE"],
-                continent: "north_america" // Add this
-
+                continent: "north_america"
             },
-            {
-                id: 2,
-                title: "Mumbai Flooding",
-                description: "Severe flooding in Mumbai suburbs after heavy rainfall",
-                categories: [{ title: "Floods" }],
-                geometries: [{ coordinates: [72.8777, 19.0760] }],
-                link: "#",
-                severity: "medium",
-                date: "2023-06-14T14:45:00Z",
-                status: "Ongoing",
-                affectedArea: "Multiple districts",
-                casualties: "12 injured",
-                sources: ["NDMA", "Local Authorities"],
-                continent: "asia" // Add this
+            // ... other mock events
+        ];
 
-            },
-            {
-                id: 3,
-                title: "Tokyo Earthquake",
-                description: "6.4 magnitude earthquake near Tokyo",
-                categories: [{ title: "Earthquakes" }],
-                geometries: [{ coordinates: [139.6503, 35.6762] }],
-                link: "#",
-                severity: "high",
-                date: "2023-06-13T03:22:00Z",
-                status: "Aftermath",
-                affectedArea: "Tokyo metropolitan area",
-                casualties: "3 fatalities, 24 injured",
-                sources: ["JMA", "USGS"],
-                continent: "asia" // Add this
+        // Ensure all mock events have continent data
+        const eventsWithContinent = mockEvents.map(event => {
+            if (!event.continent && event.geometries?.[0]?.coordinates) {
+                const [lng, lat] = event.geometries[0].coordinates;
+                return {
+                    ...event,
+                    continent: getContinentFromCoords(lat, lng)
+                };
+            }
+            return event;
+        });
 
-            },
-            {
-                id: 4,
-                title: "Hurricane Atlantic",
-                description: "Category 3 hurricane approaching East Coast",
-                categories: [{ title: "Storms" }],
-                geometries: [{ coordinates: [-80.1918, 25.7617] }],
-                link: "#",
-                severity: "high",
-                date: "2023-06-12T18:15:00Z",
-                status: "Approaching",
-                affectedArea: "Coastal regions",
-                casualties: "None yet",
-                sources: ["NOAA", "NHC"],
-                continent: "north_america" // Add this
-
-            },
-            {
-                id: 5,
-                title: "Australian Drought",
-                description: "Extreme drought conditions affecting agriculture",
-                categories: [{ title: "Drought" }],
-                geometries: [{ coordinates: [151.2093, -33.8688] }],
-                link: "#",
-                severity: "medium",
-                date: "2023-06-10T00:00:00Z",
-                status: "Ongoing",
-                affectedArea: "New South Wales",
-                casualties: "Economic impact",
-                sources: ["BOM", "Local Reports"],
-                continent: "north_america" // Add this
-
-            },
-        ]);
+        setLiveEvents(eventsWithContinent);
     };
 
     // Fetch Disaster Events
@@ -189,8 +165,8 @@ const HomePage = () => {
         if (selectedEvent?.geometries?.[0]?.coordinates) {
             const fetchLocation = async () => {
                 const loc = await getLocationFromCoords(
-                    selectedEvent.geometries[0].coordinates[1],
-                    selectedEvent.geometries[0].coordinates[0]
+                    selectedEvent.geometries[0].coordinates[1], // latitude
+                    selectedEvent.geometries[0].coordinates[0]  // longitude
                 );
                 setLocation(loc);
             };
@@ -209,6 +185,25 @@ const HomePage = () => {
         }, [map]);
 
         return null;
+    };
+
+    // Add this utility function to your component
+    const getContinentFromCoords = (lat, lng) => {
+        // North America
+        if (lat >= 8 && lat <= 84 && lng >= -168 && lng <= -52) return 'north_america';
+        // South America
+        if (lat >= -56 && lat <= 15 && lng >= -82 && lng <= -34) return 'south_america';
+        // Africa
+        if (lat >= -35 && lat <= 37 && lng >= -20 && lng <= 55) return 'africa';
+        // Europe
+        if (lat >= 35 && lat <= 71 && lng >= -10 && lng <= 60) return 'europe';
+        // Asia
+        if (lat >= 5 && lat <= 80 && lng >= 60 && lng <= 180) return 'asia';
+        // Oceania
+        if (lat >= -50 && lat <= 0 && lng >= 110 && lng <= 180) return 'oceania';
+        // Antarctica
+        if (lat >= -90 && lat <= -50) return 'antarctica';
+        return 'unknown';
     };
 
     // Fetch Disaster Categories
@@ -307,22 +302,17 @@ const HomePage = () => {
     useEffect(() => {
         setTimeout(() => {
             setActiveDisasters([
-                // Asia
                 { id: 1, type: 'wildfire', lat: 28.7041, lng: 77.1025, severity: 'high', location: 'Delhi Outskirts, India', continent: 'asia' },
                 { id: 2, type: 'flood', lat: 19.0760, lng: 72.8777, severity: 'medium', location: 'Mumbai Suburbs, India', continent: 'asia' },
-                // North America
                 { id: 7, type: 'wildfire', lat: 34.0522, lng: -118.2437, severity: 'medium', location: 'Los Angeles, USA', continent: 'north_america' },
-                // Europe
                 { id: 10, type: 'flood', lat: 48.8566, lng: 2.3522, severity: 'medium', location: 'Paris, France', continent: 'europe' },
-                // Africa
                 { id: 12, type: 'drought', lat: -1.2921, lng: 36.8219, severity: 'high', location: 'Nairobi, Kenya', continent: 'africa' },
-                // South America
                 { id: 14, type: 'landslide', lat: -22.9068, lng: -43.1729, severity: 'high', location: 'Rio de Janeiro, Brazil', continent: 'south_america' },
-                // Oceania
                 { id: 15, type: 'cyclone', lat: -33.8688, lng: 151.2093, severity: 'high', location: 'Sydney, Australia', continent: 'oceania' },
             ]);
         }, 1500);
     }, []);
+
     // Get icon based on disaster type
     const getDisasterIcon = (type) => {
         switch (type?.toLowerCase()) {
@@ -356,6 +346,16 @@ const HomePage = () => {
         }
     };
 
+    useEffect(() => {
+        if (liveEvents.length > 0) {
+            console.log("Sample events with continents:", liveEvents.slice(0, 5).map(e => ({
+                title: e.title,
+                continent: e.continent,
+                coordinates: e.geometries?.[0]?.coordinates
+            })));
+        }
+    }, [liveEvents]);
+
     const fetchDataAndExportCSV = async () => {
         try {
             const response = await fetch("http://localhost:8000/api/events");
@@ -364,7 +364,7 @@ const HomePage = () => {
             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
 
             const data = await response.json();
-            console.log("API Response:", data); // Debugging step
+            console.log("API Response:", data);
 
             if (!data.events || !Array.isArray(data.events)) {
                 console.error("Unexpected data format:", data);
@@ -423,9 +423,9 @@ const HomePage = () => {
     useEffect(() => {
         const interval = setInterval(() => {
             setTime(Date.now());
-        }, 1000); // Updates every second
+        }, 1000);
 
-        return () => clearInterval(interval); // Cleanup on unmount
+        return () => clearInterval(interval);
     }, []);
 
     // Format date for display
@@ -438,24 +438,24 @@ const HomePage = () => {
             return "Unknown";
         }
     };
+
     const filteredDisasters = useMemo(() => {
-        return liveEvents.filter((event) => {
-            // Match disaster type
+        const filtered = liveEvents.filter((event) => {
             const typeMatch = disasterType === 'all' ||
                 (event.categories && event.categories.some(cat =>
-                    cat.title.toLowerCase() === disasterType
+                    cat.title.toLowerCase() === disasterType.toLowerCase()
                 ));
 
-            // Match continent - handle both activeDisasters and liveEvents structures
             const continentMatch = continent === 'all' ||
-                (event.continent && event.continent.toLowerCase() === continent) ||
-                (event.location && event.location.continent && event.location.continent.toLowerCase() === continent);
+                (event.continent &&
+                    event.continent.toLowerCase() === continent.toLowerCase());
 
             return typeMatch && continentMatch;
         });
+
+        console.log('Filtered disasters:', filtered.length, 'for continent:', continent);
+        return filtered;
     }, [liveEvents, disasterType, continent]);
-
-
 
     // Get severity color class
     const getSeverityColor = (severity) => {
@@ -474,14 +474,15 @@ const HomePage = () => {
     // Memoized markers for better performance
     const memoizedMarkers = useMemo(() => {
         return filteredDisasters.map((disaster) => {
-            const coordinates = disaster.geometries[0]?.coordinates || [0, 0];
-            const markerStyle = DisasterColor(disaster.categories[0]?.title || "Unknown");
-            const severityModifier = getSeverityModifier(disaster.severity);
+            const coordinates = disaster.geometries?.[0]?.coordinates || [0, 0];
+            const categoryTitle = disaster.categories?.[0]?.title || "Unknown";
+            const markerStyle = DisasterColor(categoryTitle);
+            const severityModifier = getSeverityModifier(disaster.severity || 'medium');
 
             return (
                 <CircleMarker
-                    key={disaster.id}
-                    center={[coordinates[1], coordinates[0]]}
+                    key={disaster.id || Math.random()}
+                    center={[coordinates[1] || 0, coordinates[0] || 0]}
                     radius={markerStyle.radius * severityModifier}
                     pathOptions={{
                         fillColor: markerStyle.color,
@@ -494,7 +495,7 @@ const HomePage = () => {
                         click: () => {
                             setSelectedEvent({
                                 ...disaster,
-                                coordinates: coordinates // Store coordinates explicitly
+                                coordinates: coordinates
                             });
                         },
                     }}
@@ -502,13 +503,13 @@ const HomePage = () => {
                     <Popup className="event-details-popup">
                         <div className="max-w-xs">
                             <div className="flex items-center mb-2">
-                                {getDisasterIcon(disaster.categories[0]?.title)}
-                                <h3 className="font-bold text-lg ml-2">{disaster.title}</h3>
+                                {getDisasterIcon(categoryTitle)}
+                                <h3 className="font-bold text-lg ml-2">{disaster.title || "Untitled Event"}</h3>
                             </div>
-                            <p className="text-gray-700 mb-2 text-sm">{disaster.description}</p>
+                            <p className="text-gray-700 mb-2 text-sm">{disaster.description || "No description available"}</p>
                             <div className="flex justify-between items-center">
-                                <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity)}`}>
-                                    {disaster.severity}
+                                <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity || 'unknown')}`}>
+                                    {disaster.severity || "unknown"}
                                 </span>
                                 <button
                                     className="text-blue-600 text-xs hover:underline"
@@ -590,11 +591,8 @@ const HomePage = () => {
                         <CiLogout className="text-white text-lg" />
                         <span>Logout</span>
                     </button>
-
-
                 </div>
             </header>
-
 
             {/* Hero Section */}
             <section className="relative bg-gray-900 text-white py-16">
@@ -623,7 +621,6 @@ const HomePage = () => {
                                 <FaLocationDot className="text-lg" />
                                 <span>Set Your Location</span>
                             </button>
-
                         </div>
                     </div>
                 </div>
@@ -640,25 +637,20 @@ const HomePage = () => {
                             </div>
 
                             <div className="relative">
-                                <div className="relative">
-                                    <select
-                                        value={continent}
-                                        onChange={(e) => setContinent(e.target.value)}
-                                        className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
-                                    >
-                                        <option value="all">All Continents</option>
-                                        <option value="asia">Asia</option>
-                                        <option value="africa">Africa</option>
-                                        <option value="north_america">North America</option>
-                                        <option value="south_america">South America</option>
-                                        <option value="europe">Europe</option>
-                                        <option value="oceania">Oceania</option>
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                        <ChevronDown className="h-4 w-4" />
-                                    </div>
-                                </div>
-
+                                <select
+                                    value={continent}
+                                    onChange={(e) => setContinent(e.target.value)}
+                                    className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
+                                >
+                                    <option value="all">All Continents</option>
+                                    <option value="asia">Asia</option>
+                                    <option value="africa">Africa</option>
+                                    <option value="north_america">North America</option>
+                                    <option value="south_america">South America</option>
+                                    <option value="europe">Europe</option>
+                                    <option value="oceania">Oceania</option>
+                                    <option value="antarctica">Antarctica</option>
+                                </select>
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
                                     <ChevronDown className="h-4 w-4" />
                                 </div>
@@ -937,387 +929,252 @@ const HomePage = () => {
                                     {/* Content sections with premium card styling */}
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         {/* Description card */}
-                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                                </svg>
+                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+                                            <h5 className="font-semibold text-gray-700 mb-3 flex items-center">
+                                                <Info className="w-5 h-5 mr-2 text-blue-500" />
                                                 Description
                                             </h5>
-                                            <p className="text-gray-700 leading-relaxed">{selectedEvent.description || "No description available"}</p>
+                                            <p className="text-gray-600">{typeof selectedEvent.description === 'string' ? selectedEvent.description : 'No description available'}</p>
                                         </div>
 
-                                        {/* Location details card */}
-                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                                </svg>
+                                        {/* Location card */}
+                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+                                            <h5 className="font-semibold text-gray-700 mb-3 flex items-center">
+                                                <MapPin className="w-5 h-5 mr-2 text-red-500" />
                                                 Location Details
                                             </h5>
-                                            <div className="space-y-3">
-                                                <div className="flex items-start">
-                                                    <span className="font-medium text-black w-32 inline-block">Coordinates:</span>
-                                                    <span className="text-gray-700">{selectedEvent.geometries?.[0]?.coordinates
-                                                        ? `${selectedEvent.geometries[0].coordinates[1].toFixed(4)}°, ${selectedEvent.geometries[0].coordinates[0].toFixed(4)}°`
-                                                        : "Unknown"}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-start">
-                                                    <span className="font-medium text-black w-32 inline-block">Address:</span>
-                                                    <span className="text-black">{typeof location === 'string' ? location : "Loading location..."}</span>
-                                                </div>
+                                            <div className="space-y-2">
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Coordinates:</span>
+                                                    {selectedEvent.geometries?.[0]?.coordinates ?
+                                                        `${selectedEvent.geometries[0].coordinates[1]?.toFixed(4) || 'N/A'}, ${selectedEvent.geometries[0].coordinates[0]?.toFixed(4) || 'N/A'}` :
+                                                        "Unknown"}
+                                                </p>
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Address:</span> {location || "Loading..."}
+                                                </p>
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Continent:</span> {selectedEvent.continent ? selectedEvent.continent.replace(/_/g, ' ') : "Unknown"}
+                                                </p>
                                             </div>
                                         </div>
 
-                                        {/* Event Information card */}
-                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                                                </svg>
-                                                Event Information
-                                            </h5>
-                                            <div className="space-y-3">
-                                                <div className="flex items-start">
-                                                    <span className="font-medium text-black w-32 inline-block">Date:</span>
-                                                    <span className="text-gray-700">{formatDate(selectedEvent.geometries[0].date)}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Data Sources card */}
-                                        <div className="bg-gray-50 p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-lg">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
-                                                </svg>
-                                                Data Sources
+                                        {/* Status card */}
+                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+                                            <h5 className="font-semibold text-gray-700 mb-3 flex items-center">
+                                                <Activity className="w-5 h-5 mr-2 text-purple-500" />
+                                                Event Status
                                             </h5>
                                             <div className="space-y-2">
-                                                {selectedEvent.sources && selectedEvent.sources.length > 0 ? (
-                                                    selectedEvent.sources.map((source, index) => (
-                                                        <div key={index} className="flex items-center mb-2">
-                                                            <span className="text-blue-600 mr-2">•</span>
-                                                            <a
-                                                                href={source.url}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                                                            >
-                                                                {source.url}
-                                                            </a>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <p className="text-gray-600 italic">No source information available</p>
-                                                )}
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Severity:</span>
+                                                    <span className={`ml-2 px-2 py-1 rounded-full text-xs ${getSeverityColor(selectedEvent.severity)}`}>
+                                                        {selectedEvent.severity}
+                                                    </span>
+                                                </p>
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Status:</span> {selectedEvent.status || "Unknown"}
+                                                </p>
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">First Reported:</span> {formatDate(selectedEvent.date)}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Impact card */}
+                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+                                            <h5 className="font-semibold text-gray-700 mb-3 flex items-center">
+                                                <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" />
+                                                Impact Assessment
+                                            </h5>
+                                            <div className="space-y-2">
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Affected Area:</span> {typeof selectedEvent.affectedArea === 'string' ? selectedEvent.affectedArea : "Unknown"}
+                                                </p>
+                                                <p className="text-gray-600">
+                                                    <span className="font-medium">Casualties:</span> {selectedEvent.casualties || "None reported"}
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Action button with premium styling */}
-                                    <div className="flex justify-center pt-6">
-                                        <button
-                                            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl text-sm font-medium flex items-center transition-colors shadow-md hover:shadow-lg"
-                                            onClick={() => {
-                                                if (mapRef.current && selectedEvent.geometries?.[0]?.coordinates) {
-                                                    mapRef.current.flyTo(
-                                                        [selectedEvent.geometries[0].coordinates[1],
-                                                        selectedEvent.geometries[0].coordinates[0]],
-                                                        12
-                                                    );
-                                                }
-                                            }}
-                                        >
-                                            <Target className="h-5 w-5 mr-3" />
-                                            Zoom to Location
-                                        </button>
+                                    {/* Sources and actions */}
+                                    <div className="pt-4 border-t border-gray-200">
+                                        <div className="flex flex-wrap justify-between items-center">
+                                            <div className="mb-4 md:mb-0">
+                                                <h5 className="font-semibold text-gray-700 mb-2">Data Sources:</h5>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedEvent.sources?.map((source, index) => (
+                                                        <span key={index} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm">
+                                                            {typeof source === 'string' ? source : source.url || source.id || 'Unknown source'}
+                                                        </span>
+                                                    )) || <span className="text-sm text-gray-500">No source information available</span>}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <a
+                                                    href={selectedEvent.link || "#"}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center"
+                                                >
+                                                    <ExternalLink className="w-4 h-4 mr-2" />
+                                                    Official Report
+                                                </a>
+                                                <button
+                                                    onClick={() => {
+                                                        // Implement share functionality
+                                                        navigator.clipboard.writeText(window.location.href);
+                                                        toast.success("Event link copied to clipboard!");
+                                                    }}
+                                                    className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition flex items-center"
+                                                >
+                                                    <Share2 className="w-4 h-4 mr-2" />
+                                                    Share
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         )}
                     </div>
 
-
-                    {/* Sidebar - Events and Notifications */}
+                    {/* Sidebar with Enhanced UI */}
                     <div className={`${isFullscreen ? 'hidden' : 'lg:w-1/3'} space-y-6`}>
-                        {/* Active Disasters Card */}
-                        <div className="bg-white p-4 rounded-xl shadow-md">
+                        {/* Notifications Panel */}
+                        <div className="bg-white p-6 rounded-xl shadow-md">
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-                                    <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
-                                    Active Disasters
-                                </h3>
-                                <span className="text-sm text-gray-500">{filteredDisasters.length} events</span>
-                            </div>
-
-                            <div
-                                className="space-y-3 max-h-96 overflow-y-auto pr-2"
-                                onScroll={(e) => {
-                                    const { scrollTop, scrollHeight, clientHeight } = e.target;
-                                    if (scrollHeight - scrollTop === clientHeight) {
-                                        setVisibleEvents(prev => prev + 50);
-                                    }
-                                }}
-                            >
-                                {filteredDisasters.slice(0, visibleEvents).map((disaster) => {
-                                    const coordinates = disaster.geometries[0]?.coordinates || [0, 0];
-                                    const markerStyle = DisasterColor(disaster.categories[0]?.title || "Unknown");
-
-                                    return (
-                                        <div
-                                            key={disaster.id}
-                                            className={`p-3 rounded-lg border cursor-pointer hover:bg-gray-50 transition ${selectedEvent?.id === disaster.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
-                                            onClick={() => {
-                                                setSelectedEvent({
-                                                    ...disaster,
-                                                    coordinates: coordinates
-                                                });
-                                                if (mapRef.current) {
-                                                    mapRef.current.flyTo([coordinates[1], coordinates[0]], 8);
-                                                }
-                                            }}
-                                        >
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex items-start">
-                                                    <div className="p-1 rounded-full mr-3" style={{ backgroundColor: markerStyle.pulseColor }}>
-                                                        <div
-                                                            className="w-8 h-8 rounded-full flex items-center justify-center"
-                                                            style={{ backgroundColor: markerStyle.color }}
-                                                        >
-                                                            {getDisasterIcon(disaster.categories[0]?.title)}
-                                                        </div>
-                                                    </div>
-                                                    <div className="ml-2">
-                                                        <h4 className="font-medium text-gray-800">{disaster.title}</h4>
-                                                        <p className="text-sm text-gray-600 line-clamp-2 mt-1">{disaster.description}</p>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity)}`}>
-                                                        {disaster.severity}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-between mt-2 text-xs text-gray-500">
-                                                <span>Category: {disaster.categories[0]?.title}</span>
-                                                <a href={disaster.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                                                    Source
-                                                </a>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {filteredDisasters.length === 0 && (
-                                    <div className="p-4 text-center">
-                                        <p className="text-gray-500">No disasters matching your filters</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-
-
-
-                        {/* Recent Alerts Card */}
-                        <div className="bg-white p-4 rounded-xl shadow-md">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-                                    <Bell className="w-5 h-5 mr-2 text-orange-600" />
+                                <h3 className="text-xl font-semibold text-gray-800 flex items-center">
+                                    <Bell className="w-5 h-5 mr-2 text-red-600" />
                                     Recent Alerts
                                 </h3>
-                                <span className="text-sm text-gray-500">Last 24 hours</span>
+                                <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                                    {notifications.length} New
+                                </span>
                             </div>
 
-                            <div className="space-y-3 max-h-60 overflow-y-auto">
+                            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
                                 {notifications.map((notification) => (
-                                    <div key={notification.id} className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition cursor-pointer">
-                                        <div className="flex justify-between items-start">
+                                    <div
+                                        key={notification.id}
+                                        className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                                        onClick={() => {
+                                            // Find matching event and set as selected
+                                            const matchingEvent = liveEvents.find(
+                                                (e) => e.categories[0]?.title.toLowerCase() === notification.type.toLowerCase()
+                                            );
+                                            if (matchingEvent) setSelectedEvent(matchingEvent);
+                                        }}
+                                    >
+                                        <div className="flex justify-between">
                                             <div className="flex items-start">
-                                                <div className={`p-2 rounded-full mr-3 ${getSeverityColor(notification.severity.toLowerCase())}`}>
+                                                <div className="p-2 rounded-lg bg-red-50 mr-3">
                                                     {getDisasterIcon(notification.type)}
                                                 </div>
                                                 <div>
-                                                    <h4 className="font-medium text-gray-800">
-                                                        {notification.type} Alert
-                                                    </h4>
-                                                    <p className="text-sm text-gray-600 mt-1">
-                                                        {notification.location}
-                                                    </p>
+                                                    <h4 className="font-medium text-gray-800">{notification.type}</h4>
+                                                    <p className="text-sm text-gray-600">{notification.location}</p>
                                                 </div>
                                             </div>
+                                            <span className={`text-xs px-2 py-1 rounded-full ${getSeverityColor(notification.severity)}`}>
+                                                {notification.severity}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center mt-3">
                                             <span className="text-xs text-gray-500">{notification.time}</span>
+                                            <button className="text-xs text-blue-600 hover:underline">Details</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
-                            <button className="mt-4 w-full text-blue-600 hover:text-blue-700 py-2 flex items-center justify-center font-medium text-sm">
+                            <button className="w-full mt-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition">
                                 View All Alerts
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                                </svg>
                             </button>
                         </div>
-                    </div>
-                </div>
-            </section>
 
-            {/* Forecast and Trend Section */}
-            <section className="container mx-auto px-4 py-8">
-                <div className="bg-white p-6 rounded-xl shadow-md">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-semibold text-gray-800 flex items-center">
-                            <TrendingUp className="w-6 w-6 mr-2 text-indigo-600" />
-                            Disaster Forecast & Trends
-                        </h3>
-                        <div className="flex space-x-2">
-                            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm">
-                                Last 7 Days
-                            </button>
-                            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm">
-                                This Month
-                            </button>
-                            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-md text-sm">
-                                Year to Date
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div className="p-4 border border-gray-200 rounded-lg">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <span className="text-gray-500 text-sm">Total Active Events</span>
-                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">243</h4>
-                                </div>
-                                <div className="p-2 bg-green-100 rounded-md">
-                                    <Activity className="h-6 w-6 text-green-600" />
-                                </div>
+                        {/* Statistics Panel */}
+                        <div className="bg-white p-6 rounded-xl shadow-md">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xl font-semibold text-gray-800 flex items-center">
+                                    <TrendingUp className="w-5 w-5 mr-2 text-green-600" />
+                                    Global Statistics
+                                </h3>
+                                <span className="text-xs text-gray-500">Updated hourly</span>
                             </div>
-                            <div className="flex items-center mt-2">
-                                <span className="text-green-600 text-sm font-medium">+12.5%</span>
-                                <span className="text-gray-500 text-sm ml-2">from last month</span>
-                            </div>
-                        </div>
 
-                        <div className="p-4 border border-gray-200 rounded-lg">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <span className="text-gray-500 text-sm">Highest Activity</span>
-                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">Wildfires</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-blue-50 p-4 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-blue-800">Total Events</span>
+                                        <Globe className="w-4 h-4 text-blue-600" />
+                                    </div>
+                                    <p className="text-2xl font-bold text-blue-900 mt-2">1,248</p>
+                                    <p className="text-xs text-blue-700 mt-1">+12% this month</p>
                                 </div>
-                                <div className="p-2 bg-red-100 rounded-md">
-                                    <Flame className="h-6 w-6 text-red-600" />
+
+                                <div className="bg-red-50 p-4 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-red-800">Active Now</span>
+                                        <Flame className="w-4 h-4 text-red-600" />
+                                    </div>
+                                    <p className="text-2xl font-bold text-red-900 mt-2">{filteredDisasters.length}</p>
+                                    <p className="text-xs text-red-700 mt-1">+3 today</p>
+                                </div>
+
+                                <div className="bg-purple-50 p-4 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-purple-800">High Risk</span>
+                                        <AlertTriangle className="w-4 h-4 text-purple-600" />
+                                    </div>
+                                    <p className="text-2xl font-bold text-purple-900 mt-2">48</p>
+                                    <p className="text-xs text-purple-700 mt-1">Most in Asia</p>
+                                </div>
+
+                                <div className="bg-green-50 p-4 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-green-800">Resolved</span>
+                                        <Shield className="w-4 h-4 text-green-600" />
+                                    </div>
+                                    <p className="text-2xl font-bold text-green-900 mt-2">892</p>
+                                    <p className="text-xs text-green-700 mt-1">This year</p>
                                 </div>
                             </div>
-                            <div className="flex items-center mt-2">
-                                <span className="text-red-600 text-sm font-medium">+28.7%</span>
-                                <span className="text-gray-500 text-sm ml-2">increase in incidents</span>
-                            </div>
-                        </div>
 
-                        <div className="p-4 border border-gray-200 rounded-lg">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <span className="text-gray-500 text-sm">Most Affected Region</span>
-                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">Asia Pacific</h4>
-                                </div>
-                                <div className="p-2 bg-blue-100 rounded-md">
-                                    <Globe className="h-6 w-6 text-blue-600" />
+                            <div className="mt-6">
+                                <h4 className="text-sm font-medium text-gray-700 mb-2">Event Distribution</h4>
+                                <div className="h-40 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
+                                    [Chart Placeholder]
                                 </div>
                             </div>
-                            <div className="flex items-center mt-2">
-                                <span className="text-blue-600 text-sm font-medium">118 events</span>
-                                <span className="text-gray-500 text-sm ml-2">in the past month</span>
+                        </div>
+
+                        {/* Quick Actions */}
+                        <div className="bg-white p-6 rounded-xl shadow-md">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                                <Zap className="w-5 h-5 mr-2 text-yellow-500" />
+                                Quick Actions
+                            </h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button className="p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition flex flex-col items-center">
+                                    <Bell className="w-5 h-5 mb-1" />
+                                    <span className="text-xs font-medium">Subscribe</span>
+                                </button>
+                                <button className="p-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition flex flex-col items-center">
+                                    <MapPin className="w-5 h-5 mb-1" />
+                                    <span className="text-xs font-medium">Safe Zones</span>
+                                </button>
+                                <button className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition flex flex-col items-center">
+                                    <Target className="w-5 h-5 mb-1" />
+                                    <span className="text-xs font-medium">Track Event</span>
+                                </button>
+                                <button className="p-3 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition flex flex-col items-center">
+                                    <AlertTriangle className="w-5 h-5 mb-1" />
+                                    <span className="text-xs font-medium">Report</span>
+                                </button>
                             </div>
                         </div>
-
-                        <div className="p-4 border border-gray-200 rounded-lg">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <span className="text-gray-500 text-sm">Alert Response Time</span>
-                                    <h4 className="text-2xl font-bold text-gray-800 mt-1">5.3 min</h4>
-                                </div>
-                                <div className="p-2 bg-purple-100 rounded-md">
-                                    <Zap className="h-6 w-6 text-purple-600" />
-                                </div>
-                            </div>
-                            <div className="flex items-center mt-2">
-                                <span className="text-green-600 text-sm font-medium">-1.2 min</span>
-                                <span className="text-gray-500 text-sm ml-2">improvement</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Chart placeholder - would be implemented with real charting library */}
-                    <div className="mt-8 bg-gray-50 p-6 rounded-lg h-64 flex items-center justify-center">
-                        <div className="text-center text-gray-500">
-                            <BarChart2 className="h-10 w-10 mx-auto mb-3 text-gray-400" />
-                            <p>Interactive disaster trend chart would be rendered here</p>
-                            <p className="text-sm mt-2">Using historical data and real-time analysis</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {/* Safety Resources */}
-            <section className="container mx-auto px-4 py-8">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-2xl font-semibold text-gray-800 flex items-center">
-                        <Shield className="w-6 w-6 mr-2 text-green-600" />
-                        Safety Resources & Guides
-                    </h3>
-                    <button className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center">
-                        View All Resources
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                        </svg>
-                    </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div className="bg-white p-5 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition">
-                        <div className="bg-red-100 p-3 w-12 h-12 rounded-full flex items-center justify-center mb-4">
-                            <Flame className="w-6 w-6 text-red-600" />
-                        </div>
-                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Wildfire Safety Guide</h4>
-                        <p className="text-gray-600 mb-4">Learn essential survival tactics and evacuation procedures during wildfire emergencies.</p>
-                        <button className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center">
-                            Read Safety Guide
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                            </svg>
-                        </button>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition">
-                        <div className="bg-blue-100 p-3 w-12 h-12 rounded-full flex items-center justify-center mb-4">
-                            <Waves className="w-6 w-6 text-blue-600" />
-                        </div>
-                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Flood Preparedness</h4>
-                        <p className="text-gray-600 mb-4">Comprehensive guide to prepare your home and family for potential flooding situations.</p>
-                        <button className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center">
-                            Read Safety Guide
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                            </svg>
-                        </button>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition">
-                        <div className="bg-yellow-100 p-3 w-12 h-12 rounded-full flex items-center justify-center mb-4">
-                            <Activity className="w-6 w-6 text-yellow-600" />
-                        </div>
-                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Earthquake Safety</h4>
-                        <p className="text-gray-600 mb-4">Vital information on what to do before, during, and after an earthquake strikes.</p>
-                        <button className="text-yellow-600 hover:text-yellow-700 text-sm font-medium flex items-center">
-                            Read Safety Guide
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                            </svg>
-                        </button>
                     </div>
                 </div>
             </section>
@@ -1327,90 +1184,80 @@ const HomePage = () => {
                 <div className="container mx-auto px-4">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                         <div>
-                            <div className="flex items-center mb-4">
-                                <Globe className="h-8 w-8 text-blue-400 mr-2" />
-                                <h2 className="text-xl font-bold">Geo Alert</h2>
-
-                            </div>
-                            <p className="text-gray-400 mb-4">
-                                Global disaster monitoring and alert system providing real-time updates on natural disasters worldwide.
+                            <h4 className="text-lg font-semibold mb-4">GeoAlert</h4>
+                            <p className="text-gray-400 text-sm">
+                                Advanced disaster monitoring and alert system providing real-time global event tracking and notifications.
                             </p>
-                            <div className="flex space-x-4">
-                                <a href="#" className="text-gray-400 hover:text-white transition">
-                                    <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z" />
-                                    </svg>
-                                </a>
-                                <a href="#" className="text-gray-400 hover:text-white transition">
-                                    <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-                                    </svg>
-                                </a>
-                                <a href="#" className="text-gray-400 hover:text-white transition">
-                                    <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                                    </svg>
-                                </a>
-                            </div>
                         </div>
-
                         <div>
-                            <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
-                            <ul className="space-y-2">
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Dashboard</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Report Incident</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Global Alerts</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Resources</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Analytics</a></li>
+                            <h4 className="text-lg font-semibold mb-4">Resources</h4>
+                            <ul className="space-y-2 text-gray-400 text-sm">
+                                <li><a href="#" className="hover:text-white transition">Disaster Preparedness</a></li>
+                                <li><a href="#" className="hover:text-white transition">Emergency Contacts</a></li>
+                                <li><a href="#" className="hover:text-white transition">Evacuation Routes</a></li>
+                                <li><a href="#" className="hover:text-white transition">Safety Checklists</a></li>
                             </ul>
                         </div>
-
                         <div>
-                            <h3 className="text-lg font-semibold mb-4">Resources</h3>
-                            <ul className="space-y-2">
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Disaster Preparedness</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Emergency Contacts</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Training Materials</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">API Documentation</a></li>
-                                <li><a href="#" className="text-gray-400 hover:text-white transition">Community Support</a></li>
+                            <h4 className="text-lg font-semibold mb-4">Quick Links</h4>
+                            <ul className="space-y-2 text-gray-400 text-sm">
+                                <li><a href="#" className="hover:text-white transition">Live Map</a></li>
+                                <li><a href="#" className="hover:text-white transition">Alert History</a></li>
+                                <li><a href="#" className="hover:text-white transition">API Documentation</a></li>
+                                <li><a href="#" className="hover:text-white transition">Mobile Apps</a></li>
                             </ul>
                         </div>
-
                         <div>
-                            <h3 className="text-lg font-semibold mb-4">Subscribe to Alerts</h3>
-                            <p className="text-gray-400 mb-4">Get emergency alerts and disaster notifications straight to your inbox.</p>
-                            <form className="flex">
-                                <input
-                                    type="email"
-                                    placeholder="Your email"
-                                    className="px-4 py-2 w-full rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                                />
-                                <button
-                                    type="submit"
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md transition"
-                                >
-                                    Subscribe
-                                </button>
-                            </form>
+                            <h4 className="text-lg font-semibold mb-4">Contact</h4>
+                            <ul className="space-y-2 text-gray-400 text-sm">
+                                <li className="flex items-center">
+                                    <Mail className="w-4 h-4 mr-2" />
+                                    contact@geoalert.org
+                                </li>
+                                <li className="flex items-center">
+                                    <Phone className="w-4 h-4 mr-2" />
+                                    +1 (555) 123-4567
+                                </li>
+                                <li className="flex items-center">
+                                    <MapPin className="w-4 h-4 mr-2" />
+                                    Global Monitoring Center
+                                </li>
+                            </ul>
                         </div>
                     </div>
-
-                    <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-                        <p className="text-gray-400">© 2025 Geo Alert. All rights reserved.</p>
-                        <div className="flex space-x-6 mt-4 md:mt-0">
-                            <a href="#" className="text-gray-400 hover:text-white transition">Privacy Policy</a>
-                            <a href="#" className="text-gray-400 hover:text-white transition">Terms of Service</a>
-                            <a href="#" className="text-gray-400 hover:text-white transition">Cookie Policy</a>
+                    <div className="border-t border-gray-800 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
+                        <p className="text-gray-400 text-sm mb-4 md:mb-0">
+                            © 2023 GeoAlert. All rights reserved.
+                        </p>
+                        <div className="flex space-x-6">
+                            <a href="#" className="text-gray-400 hover:text-white transition">
+                                <Twitter className="w-5 h-5" />
+                            </a>
+                            <a href="#" className="text-gray-400 hover:text-white transition">
+                                <Facebook className="w-5 h-5" />
+                            </a>
+                            <a href="#" className="text-gray-400 hover:text-white transition">
+                                <Linkedin className="w-5 h-5" />
+                            </a>
+                            <a href="#" className="text-gray-400 hover:text-white transition">
+                                <Github className="w-5 h-5" />
+                            </a>
                         </div>
                     </div>
                 </div>
             </footer>
 
             <ToastContainer
-                position="bottom-right"
-                theme="dark"
-                toastStyle={{ backgroundColor: "#1b1b1b", color: "#0f0", border: "1px solid #0f0" }}
-                progressStyle={{ background: "#0f0" }}
+                position="top-right"
+                autoClose={5000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                theme="colored"
             />
         </div>
     );
