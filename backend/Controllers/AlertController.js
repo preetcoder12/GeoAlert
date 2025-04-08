@@ -8,27 +8,39 @@ const sendDisasterAlert = async (req, res) => {
 
         // Validate inputs
         if (!phone || !message) {
-            return res.status(400).json({ error: "Missing required fields" });
+            return res.status(400).json({ 
+                error: "Missing required fields",
+                details: { received: req.body }
+            });
         }
 
-        // Here you would integrate with your SMS gateway (Twilio, etc.)
-        // This is just a mock implementation
-        console.log(`Would send SMS to ${phone}: ${message}`);
+        // Send the SMS
+        const smsResult = await sendSmsAlert(phone, message);
+        
+        if (!smsResult.success) {
+            return res.status(400).json({
+                error: "Failed to send SMS",
+                details: smsResult
+            });
+        }
 
-        // Mock response
         res.json({
             success: true,
             message: "Alert sent successfully",
             details: {
                 recipient: phone,
                 content: message,
+                smsDetails: smsResult,
                 disasterLocation: coordinates,
                 userLocation: userLocation
             }
         });
     } catch (error) {
         console.error("Error sending alert:", error);
-        res.status(500).json({ error: "Failed to send alert" });
+        res.status(500).json({ 
+            error: "Failed to send alert",
+            details: error.message 
+        });
     }
 };
 

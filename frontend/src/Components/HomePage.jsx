@@ -985,22 +985,7 @@ const HomePage = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            {/* Enhanced Header */}
-            <button
-                onClick={() => sendDisasterAlertSMS({
-                    title: "TEST DISASTER",
-                    categories: [{ title: "Earthquake" }],
-                    geometries: [{
-                        coordinates: [
-                            userLocation.lng + 0.1,  // ~11km east
-                            userLocation.lat + 0.1   // ~11km north
-                        ]
-                    }]
-                })}
-                className="bg-blue-500 text-white p-2 rounded"
-            >
-                Test Alert (50km)
-            </button>
+           
             <header className="bg-gradient-to-r from-gray-900/95 to-red-900/95 shadow-lg border-b border-indigo-500/40">
                 <div className="container mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-5">
                     {/* Left: Logo, Title, Live */}

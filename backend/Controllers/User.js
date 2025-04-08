@@ -148,25 +148,53 @@ const updatelocation = async (req, res) => {
     }
 };
 
-
 const sendsms = async (req, res) => {
-    const { title, type, latitude, longitude, severity } = req.body;
+    try {
+        const { title, type, latitude, longitude, severity } = req.body;
 
-    const newDisaster = await Disaster.create({ title, type, latitude, longitude, severity });
-
-    // Step 1: Fetch all users
-    const users = await User.find({});
-
-    // Step 2: For each user, calculate distance
-    users.forEach(user => {
-        const distance = getDistanceFromLatLonInKm(latitude, longitude, user.latitude, user.longitude);
-
-        if (distance <= 50) {
-            sendSMS(user.phone, `🚨 ${title} (${type}) reported near you! Stay safe.`);
+        // Validate input
+        if (!title || !type || !latitude || !longitude) {
+            return res.status(400).json({ error: 'Missing required fields' });
         }
-    });
 
-    res.status(201).json({ message: 'Disaster created and alerts sent.' });
+        // Create disaster record
+        const newDisaster = await Disaster.create({
+            title,
+            type,
+            latitude,
+            longitude,
+            severity
+        });
+
+        // Get all subscribed users
+        const users = await User.find({ subscribedToAlerts: true });
+
+        // Send alerts to nearby users
+        for (const user of users) {
+            if (!user.phone || !user.location) continue;
+
+            const distance = getDistanceFromLatLonInKm(
+                latitude,
+                longitude,
+                user.location.lat,
+                user.location.lng
+            );
+
+            if (distance <= 500) { // 500 km radius
+                const message = `🚨 ${title} (${type}) reported ${distance.toFixed(0)}km from you! Stay safe.`;
+                await sendSmsAlert(user.phone, message);
+            }
+        }
+
+        res.status(201).json({
+            success: true,
+            message: 'Disaster created and alerts sent',
+            disaster: newDisaster
+        });
+    } catch (error) {
+        console.error('Error in sendsms:', error);
+        res.status(500).json({ error: 'Failed to process alert' });
+    }
 }
 
 const userdetails = async (req, res) => {
