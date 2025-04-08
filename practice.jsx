@@ -1,0 +1,1720 @@
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Switch } from '@headlessui/react';
+
+import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, ZoomControl } from 'react-leaflet';
+import {
+    Bell,
+    TrendingUp,
+    MapPin,
+    Flame,
+    Waves,
+    Wind,
+    Globe,
+    Shield,
+    AlertTriangle,
+    Activity,
+    Download,
+    ChevronDown,
+    Info,
+    Layers,
+    Search,
+    Zap,
+    ThermometerSun,
+    Target,
+    BarChart2,
+    Filter,
+    Mail,
+    Phone,
+    Twitter,
+    Facebook,
+    Linkedin,
+    Github,
+    ExternalLink,
+    Share2,
+    Moon,
+    Sun,
+    Maximize2,
+    Minimize2,
+    AlertCircle,
+    BarChart,
+    PieChart,
+    Settings,
+    ChevronRight,
+    Send,
+    Clock,
+    X
+} from 'lucide-react'; import 'leaflet/dist/leaflet.css';
+import { ToastContainer, toast } from 'react-toastify';
+import axios from 'axios';
+import { useMap } from 'react-leaflet';
+import { useNavigate } from "react-router-dom";
+import MarkerClusterGroup from 'react-leaflet-cluster';
+import { CiLogout } from "react-icons/ci";
+import { FaLocationDot } from "react-icons/fa6";
+import Footer from './Footer';
+
+
+const HomePage = () => {
+    const [activeDisasters, setActiveDisasters] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [liveEvents, setLiveEvents] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [disasterType, setDisasterType] = useState('all');
+    const [userLocation, setUserLocation] = useState(null);
+    const [mapView, setMapView] = useState('standard');
+    const [mapTheme, setMapTheme] = useState('light');
+    const [heatmapVisible, setHeatmapVisible] = useState(false);
+    const [selectedEvent, setSelectedEvent] = useState(null);
+    const [legend, setLegend] = useState(false);
+    const [notifications, setNotifications] = useState([
+        { id: 1, type: 'Wildfire', location: 'Uttarakhand Hills, India', severity: 'High', time: '10 mins ago' },
+        { id: 2, type: 'Flood', location: 'Mumbai Suburbs, India', severity: 'Medium', time: '25 mins ago' },
+        { id: 3, type: 'Storm', location: 'Chennai Coast, India', severity: 'High', time: '42 mins ago' },
+        { id: 4, type: 'Earthquake', location: 'Tokyo, Japan', severity: 'High', time: '1 hour ago' },
+        { id: 5, type: 'Tsunami', location: 'Bali, Indonesia', severity: 'High', time: '2 hours ago' },
+        { id: 6, type: 'Wildfire', location: 'California, USA', severity: 'Medium', time: '3 hours ago' },
+    ]);
+    const [continent, setContinent] = useState('all');
+    const [timeRange, setTimeRange] = useState('all');
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [bounds, setBounds] = useState(null);
+    const [visibleEvents, setVisibleEvents] = useState(50);
+    const [mapReady, setMapReady] = useState(false);
+    const [location, setLocation] = useState("");
+    const [darkMode, setDarkMode] = useState(false); // New state for dark mode
+
+    const [latLong, setLatLong] = useState("");   // For coordinates
+
+    // In your frontend React code
+    const [sentAlertIds, setSentAlertIds] = useState(new Set());
+
+    // Add this to your checkForNearbyDisasters function
+    // const checkForNearbyDisasters = async () => {
+    //     try {
+    //         // Check each disaster in filteredDisasters
+    //         for (const disaster of filteredDisasters) {
+    //             // Skip if we've already sent an alert for this disaster
+    //             if (sentAlertIds.has(disaster.id)) continue;
+
+    //             const disasterCoords = disaster.geometries?.[0]?.coordinates;
+    //             if (!disasterCoords || disasterCoords.length !== 2) continue;
+
+    //             // Check if this disaster type is in user's preferences
+    //             const disasterType = disaster.categories?.[0]?.title;
+    //             if (!alertPreferences.disasterTypes.includes(disasterType)) continue;
+
+    //             // Calculate distance
+    //             const distance = geolib.getDistance(
+    //                 { latitude: userLocation.lat, longitude: userLocation.lng },
+    //                 { latitude: disasterCoords[1], longitude: disasterCoords[0] }
+    //             );
+
+    //             // If within alert radius (convert km to meters)
+    //             if (distance <= alertPreferences.radius * 1000) {
+    //                 // Send alert request to backend
+    //                 const response = await axios.post('http://localhost:8000/api/send-alert', {
+    //                     phone: phoneNumber,
+    //                     disaster,
+    //                     userLocation,
+    //                     distance // Pass the distance so we can tell the user how far away it is
+    //                 });
+
+    //                 // Mark this disaster as alerted
+    //                 setSentAlertIds(prev => new Set([...prev, disaster.id]));
+
+    //                 console.log('Alert sent:', response.data);
+
+    //                 // Show a notification in the app
+    //                 toast.info(`Alert sent: ${disaster.title} is ${Math.round(distance / 1000)}km away`, {
+    //                     duration: 10000,
+    //                     icon: '🚨'
+    //                 });
+    //             }
+    //         }
+    //     } catch (err) {
+    //         console.error('Error in disaster alert check:', err);
+    //         toast.error('Failed to send alert. Please check your connection.');
+    //     }
+    // };
+
+
+    const mapRef = useRef(null);
+    const navigate = useNavigate();
+
+    // Dark mode setup and persistence
+    useEffect(() => {
+        // Check for saved dark mode preference in localStorage
+        const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+        setDarkMode(savedDarkMode);
+
+        // Set initial theme based on saved preference or system preference
+        if (savedDarkMode || (!savedDarkMode && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            setMapTheme('dark'); // Sync map theme with UI dark mode
+        } else {
+            document.documentElement.classList.remove('dark');
+            setMapTheme('light');
+        }
+    }, []);
+
+    // Toggle dark mode function
+    const toggleDarkMode = () => {
+        const newDarkMode = !darkMode;
+        setDarkMode(newDarkMode);
+        localStorage.setItem('darkMode', newDarkMode);
+
+        if (newDarkMode) {
+            document.documentElement.classList.add('dark');
+            setMapTheme('dark'); // Sync map theme
+        } else {
+            document.documentElement.classList.remove('dark');
+            setMapTheme('light');
+        }
+    };
+
+    const toggleLegend = () => {
+        setLegend(prev => !prev);
+    };
+
+    const updateBounds = (map) => {
+        if (map) {
+            setBounds(map.getBounds());
+        }
+    };
+
+    // Optimized event fetching with viewport filtering
+    const fetchEvents = useCallback(async () => {
+        try {
+            const response = await axios.get(`http://localhost:8000/api/events`);
+
+            if (response?.data?.events) {
+                const eventsWithContinent = response.data.events.map(event => {
+                    // If continent is already defined, keep it
+                    if (event.continent) return event;
+
+                    // Otherwise, calculate it from coordinates
+                    const coords = event.geometries?.[0]?.coordinates;
+                    if (Array.isArray(coords) && coords.length === 2) {
+                        const [lng, lat] = coords;
+                        return {
+                            ...event,
+                            continent: getContinentFromCoords(lat, lng)
+                        };
+                    }
+
+                    return event;
+                });
+
+                setLiveEvents(eventsWithContinent);
+            }
+        } catch (error) {
+            console.error("❌ Error fetching events:", error);
+            setMockData(); // Fallback
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const setMockData = () => {
+        const mockEvents = [
+            {
+                id: 1,
+                title: "California Wildfire",
+                description: "Major wildfire spreading in Northern California",
+                categories: [{ title: "Wildfires" }],
+                geometries: [{ coordinates: [-122.4194, 37.7749] }], // San Francisco
+                link: "#",
+                severity: "high",
+                date: "2023-06-15T08:30:00Z",
+                status: "Ongoing",
+                affectedArea: "5000 acres",
+                casualties: "None reported",
+                sources: ["NASA FIRMS", "CAL FIRE"],
+                continent: "north_america"
+            },
+            {
+                id: 2,
+                title: "Amazon Rainforest Fire",
+                description: "Fire reported in the Amazon rainforest, threatening biodiversity",
+                categories: [{ title: "Wildfires" }],
+                geometries: [{ coordinates: [-60.025, -3.4653] }], // Brazil
+                link: "#",
+                severity: "medium",
+                date: "2023-07-02T11:00:00Z",
+                status: "Contained",
+                affectedArea: "12000 hectares",
+                casualties: "2 injured",
+                sources: ["Brazilian Government", "Greenpeace"],
+                continent: "south_america"
+            },
+            {
+                id: 3,
+                title: "Floods in Bangladesh",
+                description: "Severe flooding displaces thousands",
+                categories: [{ title: "Floods" }],
+                geometries: [{ coordinates: [90.4125, 23.8103] }], // Dhaka
+                link: "#",
+                severity: "high",
+                date: "2023-08-10T06:00:00Z",
+                status: "Emergency Response",
+                affectedArea: "30 districts",
+                casualties: "15 dead, 100+ injured",
+                sources: ["Red Cross", "UN"],
+                continent: "asia"
+            },
+            {
+                id: 4,
+                title: "Cyclone Freddy",
+                description: "Category 4 cyclone makes landfall in Madagascar",
+                categories: [{ title: "Cyclone" }],
+                geometries: [{ coordinates: [47.5162, -18.7669] }], // Madagascar
+                link: "#",
+                severity: "very high",
+                date: "2023-03-20T02:00:00Z",
+                status: "Ongoing",
+                affectedArea: "Coastal cities",
+                casualties: "20 dead, 200 injured",
+                sources: ["Weather Channel", "UNICEF"],
+                continent: "africa"
+            },
+            {
+                id: 5,
+                title: "Heatwave in Europe",
+                description: "Record-breaking heatwave in Southern Europe",
+                categories: [{ title: "Extreme Temperatures" }],
+                geometries: [{ coordinates: [12.4964, 41.9028] }], // Rome
+                link: "#",
+                severity: "high",
+                date: "2023-07-28T15:00:00Z",
+                status: "Alert Issued",
+                affectedArea: "Italy, Spain, France",
+                casualties: "50+ reported deaths",
+                sources: ["European Weather Agency", "WHO"],
+                continent: "europe"
+            },
+            {
+                id: 6,
+                title: "Australian Bushfire",
+                description: "Seasonal bushfires in New South Wales",
+                categories: [{ title: "Wildfires" }],
+                geometries: [{ coordinates: [150.644, -34.397] }], // NSW
+                link: "#",
+                severity: "moderate",
+                date: "2023-11-05T13:00:00Z",
+                status: "Under Control",
+                affectedArea: "2000 hectares",
+                casualties: "None",
+                sources: ["NSW Fire Services"],
+                continent: "australia"
+            },
+            {
+                id: 7,
+                title: "Earthquake in Turkey",
+                description: "6.5 magnitude earthquake rocks Eastern Turkey",
+                categories: [{ title: "Earthquake" }],
+                geometries: [{ coordinates: [39.9208, 32.8541] }], // Ankara (for example)
+                link: "#",
+                severity: "very high",
+                date: "2023-09-15T10:15:00Z",
+                status: "Search & Rescue",
+                affectedArea: "Multiple provinces",
+                casualties: "150+ dead, 800 injured",
+                sources: ["USGS", "Turkish Disaster Agency"],
+                continent: "asia"
+            }
+
+        ];
+
+        // Ensure all mock events have continent data
+        const eventsWithContinent = mockEvents.map(event => {
+            if (!event.continent && event.geometries?.[0]?.coordinates) {
+                const [lng, lat] = event.geometries[0].coordinates;
+                return {
+                    ...event,
+                    continent: getContinentFromCoords(lat, lng)
+                };
+            }
+            return event;
+        });
+
+        setLiveEvents(eventsWithContinent);
+    };
+
+    // Fetch Disaster Events
+    useEffect(() => {
+        fetchEvents();
+    }, [fetchEvents]);
+
+    const getLocationFromCoords = async (lat, lon) => {
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+            const data = await response.json();
+            return data.display_name || "Unknown Location";
+        } catch (error) {
+            console.error("Error fetching location:", error);
+            return "Location not found";
+        }
+    };
+
+    useEffect(() => {
+        if (selectedEvent?.geometries?.[0]?.coordinates) {
+            const fetchLocation = async () => {
+                const loc = await getLocationFromCoords(
+                    selectedEvent.geometries[0].coordinates[1], // latitude
+                    selectedEvent.geometries[0].coordinates[0]  // longitude
+                );
+                setLocation(loc);
+            };
+            fetchLocation();
+        }
+    }, [selectedEvent]);
+
+    const LimitMapBounds = () => {
+        const map = useMap();
+
+        useEffect(() => {
+            map.setMaxBounds([
+                [-85, -180],
+                [85, 180]
+            ]);
+        }, [map]);
+
+        return null;
+    };
+
+    // Add this utility function to your component
+    const getContinentFromCoords = (lat, lng) => {
+        // North America
+        if (lat >= 8 && lat <= 84 && lng >= -168 && lng <= -52) return 'north_america';
+        // South America
+        if (lat >= -56 && lat <= 15 && lng >= -82 && lng <= -34) return 'south_america';
+        // Africa
+        if (lat >= -35 && lat <= 37 && lng >= -20 && lng <= 55) return 'africa';
+        // Europe
+        if (lat >= 35 && lat <= 71 && lng >= -10 && lng <= 60) return 'europe';
+        // Asia
+        if (lat >= 5 && lat <= 80 && lng >= 60 && lng <= 180) return 'asia';
+        // Oceania
+        if (lat >= -50 && lat <= 0 && lng >= 110 && lng <= 180) return 'oceania';
+        // Antarctica
+        if (lat >= -90 && lat <= -50) return 'antarctica';
+        return 'unknown';
+    };
+
+    // Fetch Disaster Categories
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const response = await axios.get(`http://localhost:8000/api/categories`);
+                if (response.data.categories) {
+                    setCategories(response.data.categories);
+                } else {
+                    console.error("Unexpected API response format:", response.data);
+                    setCategories([
+                        { title: "Wildfires" },
+                        { title: "Floods" },
+                        { title: "Earthquakes" },
+                        { title: "Storms" },
+                        { title: "Drought" },
+                        { title: "Volcanoes" },
+                        { title: "Landslides" }
+                    ]);
+                }
+            } catch (error) {
+                console.error("Error fetching categories:", error);
+                setCategories([
+                    { title: "Wildfires" },
+                    { title: "Floods" },
+                    { title: "Earthquakes" },
+                    { title: "Storms" },
+                    { title: "Drought" },
+                    { title: "Volcanoes" },
+                    { title: "Landslides" }
+                ]);
+            }
+        };
+        fetchCategories();
+    }, []);
+
+    const handleLogout = () => {
+        localStorage.removeItem("authToken");
+        navigate("/signup");
+    };
+
+    const getLocation = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    const latLongValue = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                    setLatLong(latLongValue);
+                    localStorage.setItem("user_coordinates", latLongValue);
+
+                    try {
+                        const response = await axios.get(
+                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+                        );
+
+                        if (response.data.display_name) {
+                            const address = response.data.display_name;
+                            setLocation(address);
+                            localStorage.setItem("location", address);
+                            toast.success("Location saved!");
+                        } else {
+                            setLocation("Location Not Found");
+                        }
+
+                    } catch (error) {
+                        console.error("Geocoding Error: ", error);
+                        setLocation("Error Getting Location");
+                    }
+                },
+                (error) => {
+                    console.error("Geolocation Error:", error);
+                    toast.error("Please enable location permissions in your browser settings");
+                    setLocation("Permission Denied");
+                }
+            );
+        } else {
+            setLocation("Geolocation Not Supported");
+        }
+    };
+
+    useEffect(() => {
+        const storedLocation = localStorage.getItem("location");
+        const storedCoords = localStorage.getItem("user_coordinates");
+
+        if (storedLocation) setLocation(storedLocation);
+        if (storedCoords) setLatLong(storedCoords);
+    }, []);
+
+
+
+    // Get user location
+    useEffect(() => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    setUserLocation({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+                },
+                (error) => {
+                    console.error("Error getting location:", error);
+                }
+            );
+        }
+    }, []);
+
+    // Mock active disaster data
+    useEffect(() => {
+        setTimeout(() => {
+            setActiveDisasters([
+                { id: 1, type: 'wildfire', lat: 28.7041, lng: 77.1025, severity: 'high', location: 'Delhi Outskirts, India', continent: 'asia' },
+                { id: 2, type: 'flood', lat: 19.0760, lng: 72.8777, severity: 'medium', location: 'Mumbai Suburbs, India', continent: 'asia' },
+                { id: 7, type: 'wildfire', lat: 34.0522, lng: -118.2437, severity: 'medium', location: 'Los Angeles, USA', continent: 'north_america' },
+                { id: 10, type: 'flood', lat: 48.8566, lng: 2.3522, severity: 'medium', location: 'Paris, France', continent: 'europe' },
+                { id: 12, type: 'drought', lat: -1.2921, lng: 36.8219, severity: 'high', location: 'Nairobi, Kenya', continent: 'africa' },
+                { id: 14, type: 'landslide', lat: -22.9068, lng: -43.1729, severity: 'high', location: 'Rio de Janeiro, Brazil', continent: 'south_america' },
+                { id: 15, type: 'cyclone', lat: -33.8688, lng: 151.2093, severity: 'high', location: 'Sydney, Australia', continent: 'oceania' },
+            ]);
+        }, 1500);
+    }, []);
+
+    // Get icon based on disaster type
+    const getDisasterIcon = (type) => {
+        switch (type?.toLowerCase()) {
+            case 'wildfire':
+            case 'wildfires':
+                return <Flame className="w-1 h-1 text-red-600" />;
+            case 'flood':
+            case 'floods':
+                return <Waves className="w-1 h-1 text-blue-600" />;
+            case 'storm':
+            case 'storms':
+            case 'hurricane':
+            case 'cyclone':
+                return <Wind className="w-1 h-1 text-gray-600" />;
+            case 'earthquake':
+            case 'earthquakes':
+                return <Activity className="w-1 h-1 text-yellow-600" />;
+            case 'tsunami':
+                return <Waves className="w-1 h-1 text-indigo-600" />;
+            case 'drought':
+                return <ThermometerSun className="w-1 h-1 text-orange-600" />;
+            case 'tornado':
+                return <Wind className="w-1 h-1 text-purple-600" />;
+            case 'landslide':
+            case 'landslides':
+                return <AlertTriangle className="w-1 h-1 text-amber-600" />;
+            case 'volcanoes':
+                return <Flame className="w-1 h-1 text-red-800" />;
+            default:
+                return <MapPin className="w-1 h-1 text-yellow-600" />;
+        }
+    };
+
+    useEffect(() => {
+        if (liveEvents.length > 0) {
+            console.log("Sample events with continents:", liveEvents.slice(0, 5).map(e => ({
+                title: e.title,
+                continent: e.continent,
+                coordinates: e.geometries?.[0]?.coordinates
+            })));
+        }
+    }, [liveEvents]);
+
+    const fetchDataAndExportCSV = async () => {
+        try {
+            const response = await fetch("http://localhost:8000/api/events");
+            console.log("Response status:", response.status);
+
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+            const data = await response.json();
+            console.log("API Response:", data);
+
+            if (!data.events || !Array.isArray(data.events)) {
+                console.error("Unexpected data format:", data);
+                alert("Unexpected data format from server.");
+                return;
+            }
+
+            if (data.events.length === 0) {
+                console.warn("No events data received from API.");
+                alert("No data available to export.");
+                return;
+            }
+
+            const headers = Object.keys(data.events[0]);
+            const csvRows = data.events.map(row => headers.map(header => row[header] ?? "").join(","));
+            const csvData = [headers.join(","), ...csvRows].join("\n");
+
+            const blob = new Blob([csvData], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "events_data.csv";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (error) {
+            console.error("Error fetching or exporting data:", error);
+        }
+    };
+
+    const DisasterColor = (category) => {
+        const categoryColors = {
+            "Wildfires": { color: "#FF4500", radius: 18, pulseColor: "rgba(255, 69, 0, 0.3)" },
+            "Floods": { color: "#1E90FF", radius: 16, pulseColor: "rgba(30, 144, 255, 0.3)" },
+            "Earthquakes": { color: "#FFD700", radius: 20, pulseColor: "rgba(255, 215, 0, 0.3)" },
+            "Landslides": { color: "#8B4513", radius: 15, pulseColor: "rgba(139, 69, 19, 0.3)" },
+            "Storms": { color: "#9370DB", radius: 19, pulseColor: "rgba(147, 112, 219, 0.3)" },
+            "Drought": { color: "#FF8C00", radius: 17, pulseColor: "rgba(255, 140, 0, 0.3)" },
+            "Volcanoes": { color: "#B22222", radius: 22, pulseColor: "rgba(178, 34, 34, 0.3)" },
+        };
+        return categoryColors[category] || { color: "#808080", radius: 15, pulseColor: "rgba(128, 128, 128, 0.3)" };
+    };
+
+    const getSeverityModifier = (severity) => {
+        switch (severity) {
+            case 'high': return 1.5;
+            case 'medium': return 1.2;
+            case 'low': return 1;
+            default: return 1;
+        }
+    };
+
+    const [time, setTime] = useState(Date.now());
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setTime(Date.now());
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    // Format date for display
+    const formatDate = (dateString) => {
+        if (!dateString) return "Unknown";
+        try {
+            const date = new Date(dateString);
+            return isNaN(date.getTime()) ? "Invalid date" : date.toLocaleString();
+        } catch {
+            return "Unknown";
+        }
+    };
+
+    const filteredDisasters = useMemo(() => {
+        const filtered = liveEvents.filter((event) => {
+            const typeMatch = disasterType === 'all' ||
+                (event.categories && event.categories.some(cat =>
+                    cat.title.toLowerCase() === disasterType.toLowerCase()
+                ));
+
+            const continentMatch = continent === 'all' ||
+                (event.continent &&
+                    event.continent.toLowerCase() === continent.toLowerCase());
+
+            return typeMatch && continentMatch;
+        });
+
+        console.log('Filtered disasters:', filtered.length, 'for continent:', continent);
+        return filtered;
+    }, [liveEvents, disasterType, continent]);
+
+    // Get severity color class
+    const getSeverityColor = (severity) => {
+        switch (severity) {
+            case 'high':
+                return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-100 dark:border-red-800';
+            case 'medium':
+                return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-100 dark:border-yellow-800';
+            case 'low':
+                return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-100 dark:border-green-800';
+            default:
+                return 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600';
+        }
+    };
+
+    // Memoized markers for better performance
+    const memoizedMarkers = useMemo(() => {
+        return filteredDisasters.map((disaster) => {
+            const coordinates = disaster.geometries?.[0]?.coordinates || [0, 0];
+            const categoryTitle = disaster.categories?.[0]?.title || "Unknown";
+            const markerStyle = DisasterColor(categoryTitle);
+            const severityModifier = getSeverityModifier(disaster.severity || 'medium');
+
+            return (
+                <CircleMarker
+                    key={disaster.id || Math.random()}
+                    center={[coordinates[1] || 0, coordinates[0] || 0]}
+                    radius={markerStyle.radius * severityModifier}
+                    pathOptions={{
+                        fillColor: markerStyle.color,
+                        color: markerStyle.color,
+                        weight: 1,
+                        opacity: 0.8,
+                        fillOpacity: 0.7,
+                    }}
+                    eventHandlers={{
+                        click: () => {
+                            setSelectedEvent({
+                                ...disaster,
+                                coordinates: coordinates
+                            });
+                        },
+                    }}
+                >
+                    <Popup className="event-details-popup dark:bg-gray-800 dark:text-white">
+                        <div className="max-w-xs">
+                            <div className="flex items-center mb-2">
+                                {getDisasterIcon(categoryTitle)}
+                                <h3 className="font-bold text-lg ml-2">{disaster.title || "Untitled Event"}</h3>
+                            </div>
+                            <p className="text-gray-700 dark:text-gray-300 mb-2 text-sm">{disaster.description || "No description available"}</p>
+                            <div className="flex justify-between items-center">
+                                <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity || 'unknown')}`}>
+                                    {disaster.severity || "unknown"}
+                                </span>
+                                <button
+                                    className="text-blue-600 dark:text-blue-400 text-xs hover:underline"
+                                    onClick={() => {
+                                        setSelectedEvent({
+                                            ...disaster,
+                                            coordinates: coordinates
+                                        });
+                                    }}
+                                >
+                                    More details
+                                </button>
+                            </div>
+                        </div>
+                    </Popup>
+                </CircleMarker>
+            );
+        });
+    }, [filteredDisasters]);
+
+    // Get MapBox URL based on selected view and theme
+    const getMapTileUrl = () => {
+        if (mapView === 'terrain') {
+            return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+        } else {
+            return mapTheme === 'dark'
+                ? 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
+                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        }
+    };
+
+    // Toggle fullscreen map
+    const toggleFullscreen = () => {
+        setIsFullscreen(!isFullscreen);
+    };
+
+    // Here's the JSX to add a dark mode toggle button
+    // This should be added to your header or navbar section
+    const DarkModeToggle = () => (
+        <button
+            onClick={toggleDarkMode}
+            className="flex items-center justify-center p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            aria-label="Toggle dark mode"
+        >
+            {darkMode ? (
+                <Sun className="h-5 w-5 text-yellow-500" />
+            ) : (
+                <Moon className="h-5 w-5 text-gray-700" />
+            )}
+        </button>
+    );
+
+    // Add the following CSS to your global CSS file or styled-components
+    // This CSS is crucial for dark mode functionality
+    useEffect(() => {
+        // Add global dark mode styles to document 
+        const style = document.createElement('style');
+        style.textContent = `
+            /* Base dark mode styles */
+            .dark {
+                color-scheme: dark;
+                --bg-primary: #1a1a1a;
+                --text-primary: #f3f4f6;
+                --border-color: #374151;
+            }
+            
+            .dark body {
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
+            }
+            
+            .dark .leaflet-popup-content-wrapper {
+                background-color: #1f2937;
+                color: #f3f4f6;
+            }
+            
+            .dark .leaflet-popup-tip {
+                background-color: #1f2937;
+            }
+            
+            /* Dark mode for UI elements */
+            .dark-card {
+                @apply bg-gray-800 text-white border-gray-700;
+            }
+            
+            .dark-input {
+                @apply bg-gray-700 border-gray-600 text-white placeholder-gray-400;
+            }
+            
+            .dark-button {
+                @apply bg-blue-600 hover:bg-blue-700 text-white;
+            }
+        `;
+        document.head.appendChild(style);
+
+        return () => {
+            // Clean up
+            document.head.removeChild(style);
+        };
+    }, []);
+
+
+    return (
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+            {/* Enhanced Header */}
+            <header className="bg-gradient-to-r from-blue-900 via-indigo-800 to-purple-900 shadow-xl border-b border-indigo-500/30">
+                <div className="container mx-auto px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-4">
+                    {/* Left: Logo, Title, Live */}
+                    <div className="flex flex-col md:flex-row items-center gap-6 w-full md:w-auto">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-white/10 p-2 rounded-lg shadow-lg backdrop-blur">
+                                <Globe className="h-8 w-8 text-green-400 drop-shadow-glow animate-pulse" />
+                            </div>
+                            <h1 className="text-3xl font-extrabold text-white tracking-wide drop-shadow-md">
+                                Geo<span className="text-green-400">Alert</span>
+                            </h1>
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg animate-pulse">
+                            <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
+                            LIVE
+                        </div>
+
+                        <div className="text-white text-sm font-medium bg-black/30 px-4 py-1.5 rounded-full shadow-inner backdrop-blur-sm">
+                            🕒 {new Date(time).toLocaleString()}
+                        </div>
+                    </div>
+
+                    {/* Middle: Location Info */}
+                    <div className="text-white text-sm md:text-right flex-1 bg-white/5 rounded-xl px-5 py-2.5 backdrop-blur-sm shadow-inner">
+                        <div className="mb-1 flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-green-400" />
+                            <span className="font-medium">Location:</span>{" "}
+                            {location || <span className="text-gray-300 italic">Fetching address...</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4 text-green-400" />
+                            <span className="font-medium">Coordinates:</span>{" "}
+                            {latLong || <span className="text-gray-300 italic">Fetching coordinates...</span>}
+                        </div>
+                    </div>
+
+                    {/* Right: Logout */}
+                    <button
+                        onClick={handleLogout}
+                        className="px-5 py-2.5 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg shadow-lg font-semibold text-sm
+                                hover:from-red-600 hover:to-orange-600 transition-all duration-300 ease-in-out 
+                                active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-blue-900 flex items-center gap-2"
+                    >
+                        <CiLogout className="text-white text-lg" />
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </header>
+
+            {/* Enhanced Hero Section */}
+            <section className="relative bg-cover bg-center py-20" style={{ backgroundImage: "url('/images/world-map-bg.jpg')" }}>
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-900/90 to-purple-900/90"></div>
+                <div className="container mx-auto px-6 relative z-10">
+                    <div className="max-w-3xl backdrop-blur-sm bg-black/30 p-8 rounded-3xl shadow-2xl border border-white/10">
+                        <h2 className="text-4xl sm:text-5xl font-bold mb-6 text-white leading-tight">
+                            Global Disaster <span className="text-green-400">Monitoring & Alert System</span>
+                        </h2>
+                        <p className="text-xl mb-8 text-gray-200 font-light">Track global disasters in real-time, receive instant alerts, and stay prepared with our advanced monitoring and customized region-based notifications.🌍</p>
+                        <div className="flex flex-wrap gap-4">
+                            <button className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-indigo-500/30 active:scale-95">
+                                <Bell className="h-5 w-5" />
+                                Enable Global Alerts
+                            </button>
+                            <button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-red-500/30 active:scale-95">
+                                <Globe className="h-5 w-5" />
+                                <a href='/report' className="text-white">Report Emergency</a>
+                            </button>
+                            <button
+                                onClick={getLocation}
+                                className="flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/30 text-white px-7 py-3.5 rounded-xl font-medium 
+                                        hover:bg-white/20 transition-all duration-300 ease-in-out shadow-lg
+                                        active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/50"
+                            >
+                                <FaLocationDot className="text-lg" />
+                                <span>Set Your Location</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Map Controls - Enhanced */}
+            <div className="container mx-auto px-6 -mt-8">
+                <div className="bg-white p-6 rounded-2xl shadow-xl mb-8 border border-gray-100">
+                    <div className="flex flex-wrap items-center justify-between gap-6">
+                        <div className="flex flex-wrap gap-4">
+                            <div className="flex items-center bg-blue-50 rounded-lg px-4 py-2 border border-blue-100">
+                                <Filter className="h-5 w-5 text-blue-700 mr-2" />
+                                <span className="text-blue-800 font-medium">Filters:</span>
+                            </div>
+
+                            <div className="relative">
+                                <select
+                                    value={continent}
+                                    onChange={(e) => setContinent(e.target.value)}
+                                    className="appearance-none bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-5 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+                                >
+                                    <option value="all">All Continents</option>
+                                    <option value="asia">Asia</option>
+                                    <option value="africa">Africa</option>
+                                    <option value="north_america">North America</option>
+                                    <option value="south_america">South America</option>
+                                    <option value="europe">Europe</option>
+                                    <option value="oceania">Oceania</option>
+                                    <option value="antarctica">Antarctica</option>
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-700">
+                                    <ChevronDown className="h-4 w-4" />
+                                </div>
+                            </div>
+
+                            <div className="relative">
+                                <select
+                                    value={disasterType}
+                                    onChange={(e) => setDisasterType(e.target.value)}
+                                    className="appearance-none bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-5 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+                                >
+                                    <option value="all">All Disaster Types</option>
+                                    {categories.map((category, index) => (
+                                        <option key={index} value={category.title.toLowerCase()}>
+                                            {category.title}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-700">
+                                    <ChevronDown className="h-4 w-4" />
+                                </div>
+                            </div>
+
+                            <div className="relative">
+                                <select
+                                    value={timeRange}
+                                    onChange={(e) => setTimeRange(e.target.value)}
+                                    className="appearance-none bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-5 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+                                >
+                                    <option value="all">All Time</option>
+                                    <option value="24h">Last 24 Hours</option>
+                                    <option value="7d">Last 7 Days</option>
+                                    <option value="30d">Last 30 Days</option>
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-700">
+                                    <ChevronDown className="h-4 w-4" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <div className="flex gap-2">
+                                <span className="px-3.5 py-1.5 bg-red-100 text-red-800 rounded-full text-sm flex items-center shadow-sm">
+                                    <span className="w-2 h-2 bg-red-600 rounded-full mr-2 animate-pulse"></span>
+                                    High
+                                </span>
+                                <span className="px-3.5 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-sm flex items-center shadow-sm">
+                                    <span className="w-2 h-2 bg-yellow-600 rounded-full mr-2"></span>
+                                    Medium
+                                </span>
+                                <span className="px-3.5 py-1.5 bg-green-100 text-green-800 rounded-full text-sm flex items-center shadow-sm">
+                                    <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
+                                    Low
+                                </span>
+                            </div>
+
+                            <button
+                                onClick={fetchDataAndExportCSV}
+                                className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2.5 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-200 hover:shadow-md border border-gray-200"
+                            >
+                                <Download className="h-4 w-4" />
+                                Export Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced Map Section */}
+            <section className="container mx-auto px-6 py-4">
+                <div className="flex flex-col lg:flex-row gap-8">
+                    {/* Map Container with Enhanced Controls */}
+                    <div className={`${isFullscreen ? 'fixed inset-0 z-50 p-6 bg-white' : 'lg:w-2/3'} bg-white p-6 rounded-2xl shadow-xl border border-gray-100 transition-all duration-300`}>
+                        <div className="flex justify-between items-center mb-5">
+                            <h3 className="text-2xl font-bold text-gray-800 flex items-center">
+                                <div className="bg-blue-100 p-2 rounded-lg mr-3">
+                                    <MapPin className="w-5 h-5 text-blue-700" />
+                                </div>
+                                Disaster Monitoring Map
+                            </h3>
+                            <div className="bg-blue-50 px-4 py-1.5 rounded-full text-blue-800 font-medium text-sm flex items-center">
+                                <Activity className="w-4 h-4 mr-2" />
+                                {filteredDisasters.length} Live Active Events
+                            </div>
+                        </div>
+
+                        {/* Map View Controls - Enhanced */}
+                        <div className="flex items-center justify-between mb-5 bg-gray-50 p-2 rounded-xl">
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={toggleLegend}
+                                    className={`px-4 py-2 text-sm rounded-lg flex items-center gap-2 font-medium transition-all duration-200 ${legend ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                                >
+                                    <Layers className="h-4 w-4" />
+                                    Legend
+                                </button>
+                                <button
+                                    onClick={() => setMapView('standard')}
+                                    className={`px-4 py-2 text-sm rounded-lg flex items-center gap-2 font-medium transition-all duration-200 ${mapView === 'standard' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                                >
+                                    <Layers className="h-4 w-4" />
+                                    Standard
+                                </button>
+                                <button
+                                    onClick={() => setMapView('terrain')}
+                                    className={`px-4 py-2 text-sm rounded-lg flex items-center gap-2 font-medium transition-all duration-200 ${mapView === 'terrain' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                                >
+                                    <BarChart2 className="h-4 w-4" />
+                                    Terrain
+                                </button>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setMapTheme(mapTheme === 'light' ? 'dark' : 'light')}
+                                    className="px-4 py-2 bg-white text-gray-700 hover:bg-gray-100 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-200 border border-gray-200"
+                                >
+                                    {mapTheme === 'light' ? (
+                                        <>
+                                            <Moon className="h-4 w-4" />
+                                            Dark Mode
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sun className="h-4 w-4" />
+                                            Light Mode
+                                        </>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => setHeatmapVisible(!heatmapVisible)}
+                                    className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-200 ${heatmapVisible ? 'bg-orange-600 text-white shadow-md shadow-orange-500/30' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                                >
+                                    <Zap className="h-4 w-4" />
+                                    Heatmap
+                                </button>
+                                <button
+                                    onClick={toggleFullscreen}
+                                    className="px-4 py-2 bg-white text-gray-700 hover:bg-gray-100 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-200 border border-gray-200"
+                                >
+                                    {isFullscreen ? (
+                                        <>
+                                            <Minimize2 className="h-4 w-4" />
+                                            Exit Fullscreen
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Maximize2 className="h-4 w-4" />
+                                            Fullscreen
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {loading ? (
+                            <div className="h-96 flex items-center justify-center bg-gray-50 rounded-xl">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                                    <p className="mt-6 text-gray-600 font-medium">Loading disaster data...</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className={`${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-96'} rounded-xl overflow-hidden relative shadow-lg border border-gray-200`}>
+                                <MapContainer
+                                    center={[20, 0]}
+                                    zoom={2}
+                                    style={{ height: '100%', width: '100%' }}
+                                    zoomControl={false}
+                                    ref={mapRef}
+                                    worldCopyJump={false}
+                                    maxBounds={[[-85, -180], [85, 180]]}
+                                    maxBoundsViscosity={1.0}
+                                    dragging={true}
+                                    whenReady={({ target: map }) => {
+                                        updateBounds(map);
+                                        map.on('moveend', () => updateBounds(map));
+                                        setMapReady(true);
+                                    }}
+                                >
+                                    <TileLayer
+                                        url={getMapTileUrl()}
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                        subdomains={['a', 'b', 'c']}
+                                        noWrap={true}
+                                    />
+
+                                    <LimitMapBounds />
+                                    <ZoomControl position="bottomright" />
+
+                                    {/* User Location Marker */}
+                                    {userLocation && (
+                                        <CircleMarker
+                                            center={[userLocation.lat, userLocation.lng]}
+                                            radius={8}
+                                            pathOptions={{
+                                                fillColor: '#3b82f6',
+                                                color: '#1d4ed8',
+                                                weight: 2,
+                                                opacity: 1,
+                                                fillOpacity: 0.8
+                                            }}
+                                        />
+                                    )}
+
+                                    {mapReady && (
+                                        <MarkerClusterGroup
+                                            chunkedLoading
+                                            maxClusterRadius={60}
+                                            spiderfyOnMaxZoom={true}
+                                            showCoverageOnHover={true}
+                                        >
+                                            {memoizedMarkers}
+                                        </MarkerClusterGroup>
+                                    )}
+
+                                    {/* Heatmap Layer */}
+                                    {heatmapVisible && (
+                                        <GeoJSON
+                                            data={{
+                                                type: "FeatureCollection",
+                                                features: filteredDisasters.map(disaster => ({
+                                                    type: "Feature",
+                                                    geometry: {
+                                                        type: "Point",
+                                                        coordinates: disaster.geometries[0]?.coordinates || [0, 0]
+                                                    },
+                                                    properties: {
+                                                        intensity: disaster.severity === 'high' ? 1 :
+                                                            disaster.severity === 'medium' ? 0.7 : 0.4
+                                                    }
+                                                }))
+                                            }}
+                                            style={() => ({
+                                                radius: 20,
+                                                fillOpacity: 0.6,
+                                                color: 'red',
+                                                weight: 1
+                                            })}
+                                        />
+                                    )}
+                                </MapContainer>
+                                {legend && (
+                                    <div className="absolute bottom-6 left-6 z-[1000] bg-white p-4 rounded-xl shadow-lg border border-gray-100">
+                                        <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
+                                            <Layers className="h-4 w-4 mr-2 text-blue-600" />
+                                            Disaster Legend
+                                        </h4>
+                                        <div className="space-y-2.5">
+                                            {categories.map((category) => {
+                                                const style = DisasterColor(category.title);
+                                                return (
+                                                    <div key={category.title} className="flex items-center">
+                                                        <div
+                                                            className="w-4 h-4 rounded-full mr-2 shadow-sm"
+                                                            style={{ backgroundColor: style.color }}
+                                                        ></div>
+                                                        <span className="text-sm text-gray-700">{category.title}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Selected Event Details Card - Enhanced Premium Version */}
+                        {selectedEvent && (
+                            <div className="mt-8 bg-white p-8 rounded-3xl shadow-xl border border-gray-100 max-w-4xl mx-auto overflow-hidden">
+                                {/* Header with elegant styling */}
+                                <div className="flex justify-between items-center mb-8 pb-5 border-b border-gray-100">
+                                    <h3 className="text-2xl font-bold text-gray-800 flex items-center">
+                                        <div className="bg-blue-100 p-2.5 rounded-lg mr-3">
+                                            <Info className="w-6 h-6 text-blue-600" />
+                                        </div>
+                                        Event Details
+                                    </h3>
+                                    <button
+                                        onClick={() => setSelectedEvent(null)}
+                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-50"
+                                    >
+                                        <X className="h-6 w-6" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-8">
+                                    {/* Event headline with premium styling */}
+                                    <div className="flex items-start gap-6">
+                                        <div className={`p-6 rounded-2xl shadow-lg ${getSeverityColor(selectedEvent.severity)}`}>
+                                            {getDisasterIcon(selectedEvent.categories[0]?.title)}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="font-bold text-3xl text-gray-800 mb-4">{selectedEvent.title}</h4>
+                                            <div className="flex items-center">
+                                                <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-gradient-to-r from-blue-100 to-blue-50 text-blue-700 font-medium text-sm border border-blue-200">
+                                                    {selectedEvent.categories[0]?.title}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Content sections with premium card styling */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        {/* Description card */}
+                                        <div className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center">
+                                                <Info className="w-5 h-5 mr-2.5 text-blue-600" />
+                                                Description
+                                            </h5>
+                                            <p className="text-gray-700">{typeof selectedEvent.description === 'string' ? selectedEvent.description : 'No description available'}</p>
+                                        </div>
+
+                                        {/* Location card */}
+                                        <div className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center">
+                                                <MapPin className="w-5 h-5 mr-2.5 text-red-600" />
+                                                Location Details
+                                            </h5>
+                                            <div className="space-y-3">
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">Coordinates:</span>
+                                                    <span>{selectedEvent.geometries?.[0]?.coordinates ?
+                                                        `${selectedEvent.geometries[0].coordinates[1]?.toFixed(4) || 'N/A'}, ${selectedEvent.geometries[0].coordinates[0]?.toFixed(4) || 'N/A'}` :
+                                                        "Unknown"}</span>
+                                                </p>
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">Address:</span>
+                                                    <span>{location || "Loading..."}</span>
+                                                </p>
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">Continent:</span>
+                                                    <span className="capitalize">{selectedEvent.continent ? selectedEvent.continent.replace(/_/g, ' ') : "Unknown"}</span>
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Status card */}
+                                        <div className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center">
+                                                <Activity className="w-5 h-5 mr-2.5 text-purple-600" />
+                                                Event Status
+                                            </h5>
+                                            <div className="space-y-3">
+                                                <p className="text-gray-700 flex items-center">
+                                                    <span className="font-medium min-w-24 inline-block">Severity:</span>
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getSeverityColor(selectedEvent.severity)}`}>
+                                                        {selectedEvent.severity}
+                                                    </span>
+                                                </p>
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">Status:</span>
+                                                    <span>{selectedEvent.status || "Unknown"}</span>
+                                                </p>
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">First Reported:</span>
+                                                    <span>{formatDate(selectedEvent.date)}</span>
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Impact card */}
+                                        <div className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                            <h5 className="font-semibold text-gray-800 mb-3 flex items-center">
+                                                <AlertTriangle className="w-5 h-5 mr-2.5 text-orange-600" />
+                                                Impact Assessment
+                                            </h5>
+                                            <div className="space-y-3">
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">Affected Area:</span>
+                                                    <span>{typeof selectedEvent.affectedArea === 'string' ? selectedEvent.affectedArea : "Unknown"}</span>
+                                                </p>
+                                                <p className="text-gray-700 flex items-start">
+                                                    <span className="font-medium min-w-24 inline-block">Casualties:</span>
+                                                    <span>{selectedEvent.casualties || "None reported"}</span>
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Sources and actions */}
+                                    <div className="pt-6 border-t border-gray-200">
+                                        <div className="flex flex-wrap justify-between items-center">
+                                            <div className="mb-4 md:mb-0">
+                                                <h5 className="font-semibold text-gray-800 mb-3">Data Sources:</h5>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedEvent.sources?.map((source, index) => (
+                                                        <span key={index} className="bg-blue-50 text-blue-700 px-3.5 py-1.5 rounded-full text-xs font-medium flex items-center gap-1">
+                                                            <ExternalLink className="w-3 h-3" />
+                                                            {source.id || "Source " + (index + 1)}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-4">
+                                                <button
+                                                    // onClick={() => handleCenterOnEvent(selectedEvent)}
+                                                    className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-300 shadow-md active:scale-95"
+                                                >
+                                                    <Target className="h-4 w-4" />
+                                                    Center on Map
+                                                </button>
+                                                <button
+                                                    // onClick={() => handleShareEvent(selectedEvent)}
+                                                    className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-300 shadow-md active:scale-95"
+                                                >
+                                                    <Share2 className="h-4 w-4" />
+                                                    Share Alert
+                                                </button>
+                                                <button
+                                                    // onClick={() => handleSubscribeToUpdates(selectedEvent)}
+                                                    className="bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-300 shadow-md active:scale-95"
+                                                >
+                                                    <Bell className="h-4 w-4" />
+                                                    Subscribe
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Sidebar with Events List - Enhanced */}
+                    {!isFullscreen && (
+                        <div className="lg:w-1/3">
+                            {/* Events List Card - Enhanced */}
+                            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 mb-8">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-2xl font-bold text-gray-800 flex items-center">
+                                        <div className="bg-red-100 p-2 rounded-lg mr-3">
+                                            <AlertCircle className="w-5 h-5 text-red-600" />
+                                        </div>
+                                        Recent Disasters
+                                    </h3>
+                                    <div className="px-4 py-1.5 bg-blue-50 text-blue-700 rounded-full font-medium text-sm">
+                                        {filteredDisasters.length} Events
+                                    </div>
+                                </div>
+
+                                {/* Search Box - Enhanced */}
+                                <div className="relative mb-5">
+                                    <input
+                                        type="text"
+                                        placeholder="Search disasters..."
+                                        // value={searchTerm}
+                                        // onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg py-3 pl-12 pr-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                                    />
+                                    <Search className="absolute left-4 top-3.5 text-gray-400 h-5 w-5" />
+                                </div>
+
+                                {/* Events List - Enhanced with Virtual Scrolling */}
+                                <div className="h-[600px] overflow-y-auto pr-2 styled-scrollbar">
+                                    {loading ? (
+                                        <div className="flex flex-col items-center justify-center h-full">
+                                            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                                            <p className="mt-4 text-gray-600">Loading events...</p>
+                                        </div>
+                                    ) : filteredDisasters.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-full">
+                                            <div className="bg-gray-100 p-4 rounded-full mb-4">
+                                                <Search className="h-8 w-8 text-gray-500" />
+                                            </div>
+                                            <p className="text-gray-600 text-center">No disasters match your filters</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {filteredDisasters.map((disaster) => (
+                                                <div
+                                                    key={disaster.id}
+                                                    className={`p-4 rounded-xl border transition-all hover:shadow-md cursor-pointer ${selectedEvent && selectedEvent.id === disaster.id
+                                                        ? 'bg-blue-50 border-blue-200'
+                                                        : 'bg-white border-gray-200 hover:border-blue-200'
+                                                        }`}
+                                                    onClick={() => setSelectedEvent(disaster)}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div className={`p-2.5 rounded-lg shadow-sm ${getSeverityColor(disaster.severity)}`}>
+                                                            {getDisasterIcon(disaster.categories[0]?.title, "h-5 w-5")}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex justify-between">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h4 className="font-medium text-gray-900 mb-1 truncate">{disaster.title}</h4>
+                                                                    <p className="text-gray-500 text-sm mb-2 line-clamp-2">
+                                                                        {disaster.description || 'No description available'}
+                                                                    </p>
+                                                                </div>
+                                                                {disaster.severity === 'high' && (
+                                                                    <span className="flex h-2.5 w-2.5 relative ml-2 mt-1">
+                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                    {disaster.categories[0]?.title || 'Unknown'}
+                                                                </span>
+                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                                    <Clock className="w-3 h-3 mr-1" />
+                                                                    {formatDate(disaster.date)}
+                                                                </span>
+                                                                {disaster.geometries && disaster.geometries[0] && (
+                                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                                        <MapPin className="w-3 h-3 mr-1" />
+                                                                        {disaster.continent ?
+                                                                            disaster.continent.replace(/_/g, ' ').charAt(0).toUpperCase() +
+                                                                            disaster.continent.replace(/_/g, ' ').slice(1) :
+                                                                            'Unknown'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Analytics Card - Enhanced */}
+                            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 mb-8">
+                                <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
+                                    <div className="bg-purple-100 p-2 rounded-lg mr-3">
+                                        <BarChart className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    Disaster Analytics
+                                </h3>
+
+                                <div className="space-y-6">
+                                    {/* Analytics Cards */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200 shadow-sm">
+                                            <div className="font-medium text-blue-800 mb-1">Total Events</div>
+                                            <div className="text-2xl font-bold text-blue-900">{filteredDisasters.length}</div>
+                                        </div>
+                                        <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-xl border border-red-200 shadow-sm">
+                                            <div className="font-medium text-red-800 mb-1">High Severity</div>
+                                            <div className="text-2xl font-bold text-red-900">
+                                                {filteredDisasters.filter(d => d.severity === 'high').length}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Visualization - Types Distribution */}
+                                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                        <h4 className="font-medium text-gray-700 mb-3 text-sm">Disaster Types Distribution</h4>
+                                        <div className="h-40">
+                                            {/* Replace with actual chart component */}
+                                            <div className="h-full flex items-center justify-center text-gray-500">
+                                                <PieChart className="w-6 h-6 mr-2" />
+                                                Chart would render here
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Recent Activity Timeline */}
+                                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                        <h4 className="font-medium text-gray-700 mb-3 text-sm">Recent Activity</h4>
+                                        <div className="space-y-3">
+                                            {[1, 2, 3].map((_, index) => (
+                                                <div key={index} className="flex items-start">
+                                                    <div className="flex-shrink-0 h-4 w-4 rounded-full bg-blue-500 mt-1.5 mr-3 relative">
+                                                        {index === 0 && (
+                                                            <span className="absolute w-2.5 h-2.5 bg-blue-400 rounded-full -top-0.5 -right-0.5 animate-ping"></span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm text-gray-800 font-medium">
+                                                            {['New disaster reported', 'Severity level updated', 'Status changed'][index]}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {['5 minutes ago', '2 hours ago', 'Yesterday'][index]}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Alert Preferences Card - Enhanced */}
+                            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100">
+                                <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
+                                    <div className="bg-green-100 p-2 rounded-lg mr-3">
+                                        <Bell className="w-5 h-5 text-green-600" />
+                                    </div>
+                                    Notification Preferences
+                                </h3>
+
+                                <div className="space-y-5">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="font-medium text-gray-800">Global Notifications</p>
+                                            <p className="text-sm text-gray-500">Receive alerts for all major disasters</p>
+                                        </div>
+                                        <Switch
+                                            checked={notifications.global}
+                                            // onChange={() => handleNotificationToggle('global')}
+                                            className={`${notifications.global ? 'bg-blue-600' : 'bg-gray-200'
+                                                } relative inline-flex h-6 w-11 items-center rounded-full`}
+                                        >
+                                            <span
+                                                className={`${notifications.global ? 'translate-x-6' : 'translate-x-1'
+                                                    } h-4 w-4 transform rounded-full bg-white transition`}
+                                            />
+                                        </Switch>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="font-medium text-gray-800">Nearby Events Only</p>
+                                            <p className="text-sm text-gray-500">Only alerts within 100km of your location</p>
+                                        </div>
+                                        <Switch
+                                            checked={notifications.nearby}
+                                            // onChange={() => handleNotificationToggle('nearby')}
+                                            className={`${notifications.nearby ? 'bg-blue-600' : 'bg-gray-200'
+                                                } relative inline-flex h-6 w-11 items-center rounded-full`}
+                                        >
+                                            <span
+                                                className={`${notifications.nearby ? 'translate-x-6' : 'translate-x-1'
+                                                    } h-4 w-4 transform rounded-full bg-white transition`}
+                                            />
+                                        </Switch>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="font-medium text-gray-800">High Severity Only</p>
+                                            <p className="text-sm text-gray-500">Only receive critical alert notifications</p>
+                                        </div>
+                                        <Switch
+                                            checked={notifications.highSeverity}
+                                            // onChange={() => handleNotificationToggle('highSeverity')}
+                                            className={`${notifications.highSeverity ? 'bg-blue-600' : 'bg-gray-200'
+                                                } relative inline-flex h-6 w-11 items-center rounded-full`}
+                                        >
+                                            <span
+                                                className={`${notifications.highSeverity ? 'translate-x-6' : 'translate-x-1'
+                                                    } h-4 w-4 transform rounded-full bg-white transition`}
+                                            />
+                                        </Switch>
+                                    </div>
+
+                                    <div className="pt-4">
+                                        <button
+                                            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-3 rounded-xl font-medium transition-all duration-300 shadow-md shadow-blue-500/30 active:scale-98 flex items-center justify-center gap-2"
+                                        >
+                                            <Settings className="h-5 w-5" />
+                                            Customize Alert Settings
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* Enhanced Statistics Section */}
+            <section className="container mx-auto px-6 py-16">
+                <div className="text-center mb-12">
+                    <h2 className="text-3xl font-bold text-gray-800 mb-4">Global Disaster Statistics</h2>
+                    <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+                        Real-time analytics of global natural disasters and humanitarian crises
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                    {/* Statistic Cards */}
+                    {[
+                        { title: 'Active Events', value: filteredDisasters.length, icon: <Activity className="h-8 w-8" />, color: 'blue' },
+                        { title: 'High Severity', value: filteredDisasters.filter(d => d.severity === 'high').length, icon: <AlertTriangle className="h-8 w-8" />, color: 'red' },
+                        { title: 'Medium Severity', value: filteredDisasters.filter(d => d.severity === 'medium').length, icon: <AlertCircle className="h-8 w-8" />, color: 'yellow' },
+                        { title: 'Low Severity', value: filteredDisasters.filter(d => d.severity === 'low').length, icon: <Info className="h-8 w-8" />, color: 'green' }
+                    ].map((stat, index) => (
+                        <div key={index} className={`bg-white p-8 rounded-2xl shadow-xl border border-${stat.color}-100`}>
+                            <div className={`inline-flex p-4 rounded-xl bg-${stat.color}-100 text-${stat.color}-600 mb-4`}>
+                                {stat.icon}
+                            </div>
+                            <h3 className="text-4xl font-bold text-gray-800 mb-2">{stat.value}</h3>
+                            <p className="text-lg text-gray-600">{stat.title}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* Footer Section - Enhanced */}
+            <footer className="bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 text-white pt-16 pb-8">
+                <div className="container mx-auto px-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
+                        <div>
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="bg-white/10 p-2 rounded-lg">
+                                    <Globe className="h-8 w-8 text-green-400" />
+                                </div>
+                                <h2 className="text-2xl font-bold">
+                                    Geo<span className="text-green-400">Alert</span>
+                                </h2>
+                            </div>
+                            <p className="text-gray-300 mb-6">
+                                Real-time global disaster monitoring and alert system providing critical information when and where it matters most.
+                            </p>
+                            <div className="flex space-x-4">
+                                {[Twitter, Facebook, Linkedin].map((Icon, i) => (
+                                    <a key={i} href="#" className="bg-white/10 p-2.5 rounded-full hover:bg-white/20 transition-colors">
+                                        <Icon className="h-5 w-5 text-white" />
+                                    </a>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="text-xl font-semibold mb-6">Quick Links</h3>
+                            <ul className="space-y-4">
+                                {['Dashboard', 'Report Emergency', 'Alert Settings', 'Map View', 'Disaster Types', 'Weather Forecast'].map((link, i) => (
+                                    <li key={i}>
+                                        <a href="#" className="text-gray-300 hover:text-white transition-colors flex items-center gap-2">
+                                            <ChevronRight className="h-4 w-4 text-green-400" />
+                                            {link}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h3 className="text-xl font-semibold mb-6">Resources</h3>
+                            <ul className="space-y-4">
+                                {['Documentation', 'API Access', 'Safety Guidelines', 'Preparedness', 'First Aid Guide', 'Volunteer Options'].map((link, i) => (
+                                    <li key={i}>
+                                        <a href="#" className="text-gray-300 hover:text-white transition-colors flex items-center gap-2">
+                                            <ChevronRight className="h-4 w-4 text-green-400" />
+                                            {link}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h3 className="text-xl font-semibold mb-6">Newsletter</h3>
+                            <p className="text-gray-300 mb-4">
+                                Subscribe to our newsletter for the latest updates and alerts on global disasters.
+                            </p>
+                            <form className="mb-4">
+                                <div className="flex">
+                                    <input
+                                        type="email"
+                                        placeholder="Your email address"
+                                        className="flex-1 bg-white/10 text-white px-4 py-3 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-green-400"
+                                    />
+                                    <button type="submit" className="bg-green-500 hover:bg-green-600 px-4 py-3 rounded-r-lg transition-colors">
+                                        <Send className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            </form>
+                            <p className="text-sm text-gray-400">
+                                By subscribing you agree to our <a href="#" className="text-green-400 hover:underline">Privacy Policy</a>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="pt-8 border-t border-white/10 text-center">
+                        <p className="text-gray-400">
+                            © {new Date().getFullYear()} GeoAlert. All rights reserved.
+                        </p>
+                        <div className="flex justify-center mt-4 space-x-6 text-sm">
+                            <a href="#" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</a>
+                            <a href="#" className="text-gray-400 hover:text-white transition-colors">Terms of Service</a>
+                            <a href="#" className="text-gray-400 hover:text-white transition-colors">FAQ</a>
+                            <a href="#" className="text-gray-400 hover:text-white transition-colors">Contact</a>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    )
+};
+
+export default HomePage;

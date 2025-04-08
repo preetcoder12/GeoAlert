@@ -1,3 +1,5 @@
+import { Switch } from '@headlessui/react';
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, ZoomControl } from 'react-leaflet';
 import {
@@ -28,7 +30,14 @@ import {
     Linkedin,
     Github,
     ExternalLink,
-    Share2
+    Share2,
+    Moon,
+    Sun,
+    AlertCircle,
+    Clock,
+    BarChart,
+    PieChart,
+    Settings
 } from 'lucide-react'; import 'leaflet/dist/leaflet.css';
 import { ToastContainer, toast } from 'react-toastify';
 import axios from 'axios';
@@ -37,6 +46,7 @@ import { useNavigate } from "react-router-dom";
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import { CiLogout } from "react-icons/ci";
 import { FaLocationDot } from "react-icons/fa6";
+import Footer from './Footer';
 
 
 const HomePage = () => {
@@ -66,8 +76,96 @@ const HomePage = () => {
     const [visibleEvents, setVisibleEvents] = useState(50);
     const [mapReady, setMapReady] = useState(false);
     const [location, setLocation] = useState("");
+    const [darkMode, setDarkMode] = useState(false); // New state for dark mode
+
+    const [latLong, setLatLong] = useState("");   // For coordinates
+
+    // In your frontend React code
+    const [sentAlertIds, setSentAlertIds] = useState(new Set());
+
+    // Add this to your checkForNearbyDisasters function
+    const checkForNearbyDisasters = async () => {
+        try {
+            // Check each disaster in filteredDisasters
+            for (const disaster of filteredDisasters) {
+                // Skip if we've already sent an alert for this disaster
+                if (sentAlertIds.has(disaster.id)) continue;
+
+                const disasterCoords = disaster.geometries?.[0]?.coordinates;
+                if (!disasterCoords || disasterCoords.length !== 2) continue;
+
+                // Check if this disaster type is in user's preferences
+                const disasterType = disaster.categories?.[0]?.title;
+                if (!alertPreferences.disasterTypes.includes(disasterType)) continue;
+
+                // Calculate distance
+                const distance = geolib.getDistance(
+                    { latitude: userLocation.lat, longitude: userLocation.lng },
+                    { latitude: disasterCoords[1], longitude: disasterCoords[0] }
+                );
+
+                // If within alert radius (convert km to meters)
+                if (distance <= alertPreferences.radius * 1000) {
+                    // Send alert request to backend
+                    const response = await axios.post('http://localhost:8000/api/send-alert', {
+                        phone: phoneNumber,
+                        disaster,
+                        userLocation,
+                        distance // Pass the distance so we can tell the user how far away it is
+                    });
+
+                    // Mark this disaster as alerted
+                    setSentAlertIds(prev => new Set([...prev, disaster.id]));
+
+                    console.log('Alert sent:', response.data);
+
+                    // Show a notification in the app
+                    toast.info(`Alert sent: ${disaster.title} is ${Math.round(distance / 1000)}km away`, {
+                        duration: 10000,
+                        icon: '🚨'
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('Error in disaster alert check:', err);
+            toast.error('Failed to send alert. Please check your connection.');
+        }
+    };
+
+
     const mapRef = useRef(null);
     const navigate = useNavigate();
+
+    // Dark mode setup and persistence
+    useEffect(() => {
+        // Check for saved dark mode preference in localStorage
+        const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+        setDarkMode(savedDarkMode);
+
+        // Set initial theme based on saved preference or system preference
+        if (savedDarkMode || (!savedDarkMode && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            setMapTheme('dark'); // Sync map theme with UI dark mode
+        } else {
+            document.documentElement.classList.remove('dark');
+            setMapTheme('light');
+        }
+    }, []);
+
+    // Toggle dark mode function
+    const toggleDarkMode = () => {
+        const newDarkMode = !darkMode;
+        setDarkMode(newDarkMode);
+        localStorage.setItem('darkMode', newDarkMode);
+
+        if (newDarkMode) {
+            document.documentElement.classList.add('dark');
+            setMapTheme('dark'); // Sync map theme
+        } else {
+            document.documentElement.classList.remove('dark');
+            setMapTheme('light');
+        }
+    };
 
     const toggleLegend = () => {
         setLegend(prev => !prev);
@@ -83,32 +181,34 @@ const HomePage = () => {
     const fetchEvents = useCallback(async () => {
         try {
             const response = await axios.get(`http://localhost:8000/api/events`);
-            if (response.data.events) {
+
+            if (response?.data?.events) {
                 const eventsWithContinent = response.data.events.map(event => {
                     // If continent is already defined, keep it
                     if (event.continent) return event;
 
-                    // Otherwise calculate from coordinates
-                    if (event.geometries?.[0]?.coordinates) {
-                        const [lng, lat] = event.geometries[0].coordinates;
+                    // Otherwise, calculate it from coordinates
+                    const coords = event.geometries?.[0]?.coordinates;
+                    if (Array.isArray(coords) && coords.length === 2) {
+                        const [lng, lat] = coords;
                         return {
                             ...event,
                             continent: getContinentFromCoords(lat, lng)
                         };
                     }
+
                     return event;
                 });
+
                 setLiveEvents(eventsWithContinent);
             }
         } catch (error) {
-            console.error("Error fetching events:", error);
-            setMockData();
+            console.error("❌ Error fetching events:", error);
+            setMockData(); // Fallback
         } finally {
             setLoading(false);
         }
     }, []);
-
-
 
     const setMockData = () => {
         const mockEvents = [
@@ -117,7 +217,7 @@ const HomePage = () => {
                 title: "California Wildfire",
                 description: "Major wildfire spreading in Northern California",
                 categories: [{ title: "Wildfires" }],
-                geometries: [{ coordinates: [-122.4194, 37.7749] }],
+                geometries: [{ coordinates: [-122.4194, 37.7749] }], // San Francisco
                 link: "#",
                 severity: "high",
                 date: "2023-06-15T08:30:00Z",
@@ -127,7 +227,97 @@ const HomePage = () => {
                 sources: ["NASA FIRMS", "CAL FIRE"],
                 continent: "north_america"
             },
-            // ... other mock events
+            {
+                id: 2,
+                title: "Amazon Rainforest Fire",
+                description: "Fire reported in the Amazon rainforest, threatening biodiversity",
+                categories: [{ title: "Wildfires" }],
+                geometries: [{ coordinates: [-60.025, -3.4653] }], // Brazil
+                link: "#",
+                severity: "medium",
+                date: "2023-07-02T11:00:00Z",
+                status: "Contained",
+                affectedArea: "12000 hectares",
+                casualties: "2 injured",
+                sources: ["Brazilian Government", "Greenpeace"],
+                continent: "south_america"
+            },
+            {
+                id: 3,
+                title: "Floods in Bangladesh",
+                description: "Severe flooding displaces thousands",
+                categories: [{ title: "Floods" }],
+                geometries: [{ coordinates: [90.4125, 23.8103] }], // Dhaka
+                link: "#",
+                severity: "high",
+                date: "2023-08-10T06:00:00Z",
+                status: "Emergency Response",
+                affectedArea: "30 districts",
+                casualties: "15 dead, 100+ injured",
+                sources: ["Red Cross", "UN"],
+                continent: "asia"
+            },
+            {
+                id: 4,
+                title: "Cyclone Freddy",
+                description: "Category 4 cyclone makes landfall in Madagascar",
+                categories: [{ title: "Cyclone" }],
+                geometries: [{ coordinates: [47.5162, -18.7669] }], // Madagascar
+                link: "#",
+                severity: "very high",
+                date: "2023-03-20T02:00:00Z",
+                status: "Ongoing",
+                affectedArea: "Coastal cities",
+                casualties: "20 dead, 200 injured",
+                sources: ["Weather Channel", "UNICEF"],
+                continent: "africa"
+            },
+            {
+                id: 5,
+                title: "Heatwave in Europe",
+                description: "Record-breaking heatwave in Southern Europe",
+                categories: [{ title: "Extreme Temperatures" }],
+                geometries: [{ coordinates: [12.4964, 41.9028] }], // Rome
+                link: "#",
+                severity: "high",
+                date: "2023-07-28T15:00:00Z",
+                status: "Alert Issued",
+                affectedArea: "Italy, Spain, France",
+                casualties: "50+ reported deaths",
+                sources: ["European Weather Agency", "WHO"],
+                continent: "europe"
+            },
+            {
+                id: 6,
+                title: "Australian Bushfire",
+                description: "Seasonal bushfires in New South Wales",
+                categories: [{ title: "Wildfires" }],
+                geometries: [{ coordinates: [150.644, -34.397] }], // NSW
+                link: "#",
+                severity: "moderate",
+                date: "2023-11-05T13:00:00Z",
+                status: "Under Control",
+                affectedArea: "2000 hectares",
+                casualties: "None",
+                sources: ["NSW Fire Services"],
+                continent: "australia"
+            },
+            {
+                id: 7,
+                title: "Earthquake in Turkey",
+                description: "6.5 magnitude earthquake rocks Eastern Turkey",
+                categories: [{ title: "Earthquake" }],
+                geometries: [{ coordinates: [39.9208, 32.8541] }], // Ankara (for example)
+                link: "#",
+                severity: "very high",
+                date: "2023-09-15T10:15:00Z",
+                status: "Search & Rescue",
+                affectedArea: "Multiple provinces",
+                casualties: "150+ dead, 800 injured",
+                sources: ["USGS", "Turkish Disaster Agency"],
+                continent: "asia"
+            }
+
         ];
 
         // Ensure all mock events have continent data
@@ -251,7 +441,9 @@ const HomePage = () => {
             navigator.geolocation.getCurrentPosition(
                 async (position) => {
                     const { latitude, longitude } = position.coords;
-                    setLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+                    const latLongValue = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                    setLatLong(latLongValue);
+                    localStorage.setItem("user_coordinates", latLongValue);
 
                     try {
                         const response = await axios.get(
@@ -259,11 +451,13 @@ const HomePage = () => {
                         );
 
                         if (response.data.display_name) {
-                            setLocation(response.data.display_name);
+                            const address = response.data.display_name;
+                            setLocation(address);
+                            localStorage.setItem("location", address);
+                            toast.success("Location saved!");
                         } else {
                             setLocation("Location Not Found");
                         }
-                        toast.success("Location already set");
 
                     } catch (error) {
                         console.error("Geocoding Error: ", error);
@@ -280,6 +474,16 @@ const HomePage = () => {
             setLocation("Geolocation Not Supported");
         }
     };
+
+    useEffect(() => {
+        const storedLocation = localStorage.getItem("location");
+        const storedCoords = localStorage.getItem("user_coordinates");
+
+        if (storedLocation) setLocation(storedLocation);
+        if (storedCoords) setLatLong(storedCoords);
+    }, []);
+
+
 
     // Get user location
     useEffect(() => {
@@ -461,13 +665,13 @@ const HomePage = () => {
     const getSeverityColor = (severity) => {
         switch (severity) {
             case 'high':
-                return 'bg-red-100 text-red-800 border-red-200';
+                return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-100 dark:border-red-800';
             case 'medium':
-                return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+                return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-100 dark:border-yellow-800';
             case 'low':
-                return 'bg-green-100 text-green-800 border-green-200';
+                return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-100 dark:border-green-800';
             default:
-                return 'bg-gray-100 text-gray-800 border-gray-200';
+                return 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600';
         }
     };
 
@@ -500,19 +704,19 @@ const HomePage = () => {
                         },
                     }}
                 >
-                    <Popup className="event-details-popup">
+                    <Popup className="event-details-popup dark:bg-gray-800 dark:text-white">
                         <div className="max-w-xs">
                             <div className="flex items-center mb-2">
                                 {getDisasterIcon(categoryTitle)}
                                 <h3 className="font-bold text-lg ml-2">{disaster.title || "Untitled Event"}</h3>
                             </div>
-                            <p className="text-gray-700 mb-2 text-sm">{disaster.description || "No description available"}</p>
+                            <p className="text-gray-700 dark:text-gray-300 mb-2 text-sm">{disaster.description || "No description available"}</p>
                             <div className="flex justify-between items-center">
                                 <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(disaster.severity || 'unknown')}`}>
                                     {disaster.severity || "unknown"}
                                 </span>
                                 <button
-                                    className="text-blue-600 text-xs hover:underline"
+                                    className="text-blue-600 dark:text-blue-400 text-xs hover:underline"
                                     onClick={() => {
                                         setSelectedEvent({
                                             ...disaster,
@@ -546,77 +750,150 @@ const HomePage = () => {
         setIsFullscreen(!isFullscreen);
     };
 
+    // Here's the JSX to add a dark mode toggle button
+    // This should be added to your header or navbar section
+    const DarkModeToggle = () => (
+        <button
+            onClick={toggleDarkMode}
+            className="flex items-center justify-center p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            aria-label="Toggle dark mode"
+        >
+            {darkMode ? (
+                <Sun className="h-5 w-5 text-yellow-500" />
+            ) : (
+                <Moon className="h-5 w-5 text-gray-700" />
+            )}
+        </button>
+    );
+
+    // Add the following CSS to your global CSS file or styled-components
+    // This CSS is crucial for dark mode functionality
+    useEffect(() => {
+        // Add global dark mode styles to document 
+        const style = document.createElement('style');
+        style.textContent = `
+            /* Base dark mode styles */
+            .dark {
+                color-scheme: dark;
+                --bg-primary: #1a1a1a;
+                --text-primary: #f3f4f6;
+                --border-color: #374151;
+            }
+            
+            .dark body {
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
+            }
+            
+            .dark .leaflet-popup-content-wrapper {
+                background-color: #1f2937;
+                color: #f3f4f6;
+            }
+            
+            .dark .leaflet-popup-tip {
+                background-color: #1f2937;
+            }
+            
+            /* Dark mode for UI elements */
+            .dark-card {
+                @apply bg-gray-800 text-white border-gray-700;
+            }
+            
+            .dark-input {
+                @apply bg-gray-700 border-gray-600 text-white placeholder-gray-400;
+            }
+            
+            .dark-button {
+                @apply bg-blue-600 hover:bg-blue-700 text-white;
+            }
+        `;
+        document.head.appendChild(style);
+
+        return () => {
+            // Clean up
+            document.head.removeChild(style);
+        };
+    }, []);
+
+
+
+
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            <header className="bg-gradient-to-r from-blue-900 via-indigo-800 to-purple-900 shadow-lg">
-                <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-                    {/* Logo & Title */}
-                    <div className="flex items-center">
-                        <Globe className="h-8 w-8 text-green-400 mr-2" />
-                        <h1 className="text-2xl font-extrabold text-white tracking-wide">Geo Alert</h1>
+            {/* Enhanced Header */}
+            <header className="bg-gradient-to-r from-blue-900 via-indigo-800 to-purple-900 shadow-xl border-b border-indigo-500/30">
+                <div className="container mx-auto px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-4">
+                    {/* Left: Logo, Title, Live */}
+                    <div className="flex flex-col md:flex-row items-center gap-6 w-full md:w-auto">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-white/10 p-2 rounded-lg shadow-lg backdrop-blur">
+                                <Globe className="h-8 w-8 text-green-400 drop-shadow-glow animate-pulse" />
+                            </div>
+                            <h1 className="text-3xl font-extrabold text-white tracking-wide drop-shadow-md">
+                                Geo<span className="text-green-400">Alert</span>
+                            </h1>
+                        </div>
 
-                        {/* Live Indicator */}
-                        <div className="ml-3 bg-red-600 text-white px-2 py-1 rounded-md text-xs flex items-center shadow-lg">
-                            <div className="w-2 h-2 bg-white rounded-full mr-1 animate-ping"></div>
+                        <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg animate-pulse">
+                            <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
                             LIVE
                         </div>
 
-                        {/* Live Time */}
-                        <h1 className="text-white ml-4 text-sm font-medium bg-black bg-opacity-30 px-3 py-1 rounded-lg">
-                            {new Date(time).toLocaleString()}
-                        </h1>
+                        <div className="text-white text-sm font-medium bg-black/30 px-4 py-1.5 rounded-full shadow-inner backdrop-blur-sm">
+                            🕒 {new Date(time).toLocaleString()}
+                        </div>
                     </div>
 
-                    {/* Navigation Links */}
-                    <nav className="hidden md:flex space-x-6">
-                        {["Dashboard", "Report Incident", "Global Alerts", "Resources", "Analytics"].map((item) => (
-                            <a
-                                key={item}
-                                href="#"
-                                className="text-white text-sm font-medium tracking-wide hover:text-green-300 transition duration-300 ease-in-out"
-                            >
-                                {item}
-                            </a>
-                        ))}
-                    </nav>
+                    {/* Middle: Location Info */}
+                    <div className="text-white text-sm md:text-right flex-1 bg-white/5 rounded-xl px-5 py-2.5 backdrop-blur-sm shadow-inner">
+                        <div className="mb-1 flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-green-400" />
+                            <span className="font-medium">Location:</span>{" "}
+                            {location || <span className="text-gray-300 italic">Fetching address...</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4 text-green-400" />
+                            <span className="font-medium">Coordinates:</span>{" "}
+                            {latLong || <span className="text-gray-300 italic">Fetching coordinates...</span>}
+                        </div>
+                    </div>
 
-                    {/* Logout Button */}
+                    {/* Right: Logout */}
                     <button
                         onClick={handleLogout}
-                        className="px-5 py-2 bg-gradient-to-r from-red-500 to-orange-600 text-white rounded-lg shadow-lg font-semibold text-sm
-             hover:from-red-600 hover:to-orange-700 transition-all duration-300 ease-in-out 
-             active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-300 flex items-center space-x-2"
+                        className="px-5 py-2.5 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg shadow-lg font-semibold text-sm
+                                hover:from-red-600 hover:to-orange-600 transition-all duration-300 ease-in-out 
+                                active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-blue-900 flex items-center gap-2"
                     >
                         <CiLogout className="text-white text-lg" />
                         <span>Logout</span>
                     </button>
                 </div>
             </header>
-
-            {/* Hero Section */}
-            <section className="relative bg-gray-900 text-white py-16">
-                <div className="absolute inset-0 bg-black opacity-50"></div>
-                <div className="container mx-auto px-4 relative z-10">
-                    <div className="max-w-3xl">
-                        <h2 className="text-4xl font-bold mb-4 text-white">
+            {/* Enhanced Hero Section */}
+            <section className="relative bg-cover bg-center py-20" style={{ backgroundImage: "url('/images/world-map-bg.jpg')" }}>
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-900/90 to-purple-900/90"></div>
+                <div className="container mx-auto px-6 relative z-10">
+                    <div className="max-w-3xl backdrop-blur-sm bg-black/30 p-8 rounded-3xl shadow-2xl border border-white/10">
+                        <h2 className="text-4xl sm:text-5xl font-bold mb-6 text-white leading-tight">
                             Global Disaster <span className="text-green-400">Monitoring & Alert System</span>
                         </h2>
-                        <p className="text-xl mb-8">Track global disasters in real-time, receive instant alerts, and stay prepared with our advanced monitoring and customized region-based notifications.🌍</p>
+                        <p className="text-xl mb-8 text-gray-200 font-light">Track global disasters in real-time, receive instant alerts, and stay prepared with our advanced monitoring and customized region-based notifications.🌍</p>
                         <div className="flex flex-wrap gap-4">
-                            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
-                                <Bell className="h-5 w-5 mr-2" />
+                            <button className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-indigo-500/30 active:scale-95">
+                                <Bell className="h-5 w-5" />
                                 Enable Global Alerts
                             </button>
-                            <button className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-md font-medium transition flex items-center">
-                                <Globe className="h-5 w-5 mr-2" />
-                                <a href='/report' className="text-white">Report emergency</a>
+                            <button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-red-500/30 active:scale-95">
+                                <Globe className="h-5 w-5" />
+                                <a href='/report' className="text-white">Report Emergency</a>
                             </button>
                             <button
                                 onClick={getLocation}
-                                className="flex items-center space-x-2 bg-transparent border border-white text-white px-6 py-3 rounded-md font-medium 
-             hover:bg-white hover:text-gray-900 transition duration-300 ease-in-out 
-             active:scale-95 focus:outline-none focus:ring-2 focus:ring-white"
+                                className="flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/30 text-white px-7 py-3.5 rounded-xl font-medium 
+                                        hover:bg-white/20 transition-all duration-300 ease-in-out shadow-lg
+                                        active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/50"
                             >
                                 <FaLocationDot className="text-lg" />
                                 <span>Set Your Location</span>
@@ -627,20 +904,20 @@ const HomePage = () => {
             </section>
 
             {/* Map Controls - Enhanced */}
-            <div className="container mx-auto px-4 py-4">
-                <div className="bg-white p-4 rounded-xl shadow-md mb-6">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div className="flex flex-wrap gap-4">
-                            <div className="flex items-center bg-gray-50 rounded-lg px-3 py-2">
-                                <Filter className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="text-gray-700 font-medium">Filters:</span>
+            <div className="container mx-auto px-6 -mt-8 ">
+                <div className="bg-white p-6 rounded-2xl shadow-xl mb-8 border border-gray-100 ">
+                    <div className="flex flex-wrap items-center justify-between gap-6">
+                        <div className="flex flex-wrap gap-4 ">
+                            <div className="flex items-center bg-blue-50 rounded-lg px-4 py-2 border border-blue-100 ">
+                                <Filter className="h-5 w-5 text-blue-700 mr-2 " />
+                                <span className="text-blue-800 font-medium">Filters:</span>
                             </div>
 
                             <div className="relative">
                                 <select
                                     value={continent}
                                     onChange={(e) => setContinent(e.target.value)}
-                                    className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
+                                    className="appearance-none bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-5 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
                                 >
                                     <option value="all">All Continents</option>
                                     <option value="asia">Asia</option>
@@ -651,7 +928,7 @@ const HomePage = () => {
                                     <option value="oceania">Oceania</option>
                                     <option value="antarctica">Antarctica</option>
                                 </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-700">
                                     <ChevronDown className="h-4 w-4" />
                                 </div>
                             </div>
@@ -660,7 +937,7 @@ const HomePage = () => {
                                 <select
                                     value={disasterType}
                                     onChange={(e) => setDisasterType(e.target.value)}
-                                    className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
+                                    className="appearance-none bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-5 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
                                 >
                                     <option value="all">All Disaster Types</option>
                                     {categories.map((category, index) => (
@@ -669,7 +946,7 @@ const HomePage = () => {
                                         </option>
                                     ))}
                                 </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-700">
                                     <ChevronDown className="h-4 w-4" />
                                 </div>
                             </div>
@@ -678,14 +955,14 @@ const HomePage = () => {
                                 <select
                                     value={timeRange}
                                     onChange={(e) => setTimeRange(e.target.value)}
-                                    className="appearance-none bg-gray-100 border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md leading-tight focus:outline-none focus:bg-white focus:border-blue-500"
+                                    className="appearance-none bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-5 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
                                 >
                                     <option value="all">All Time</option>
                                     <option value="24h">Last 24 Hours</option>
                                     <option value="7d">Last 7 Days</option>
                                     <option value="30d">Last 30 Days</option>
                                 </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-700">
                                     <ChevronDown className="h-4 w-4" />
                                 </div>
                             </div>
@@ -693,25 +970,25 @@ const HomePage = () => {
 
                         <div className="flex items-center gap-4">
                             <div className="flex gap-2">
-                                <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm flex items-center">
-                                    <span className="w-1 h-1 bg-red-600 rounded-full mr-1"></span>
+                                <span className="px-3.5 py-1.5 bg-red-100 text-red-800 rounded-full text-sm flex items-center shadow-sm">
+                                    <span className="w-2 h-2 bg-red-600 rounded-full mr-2 animate-pulse"></span>
                                     High
                                 </span>
-                                <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm flex items-center">
-                                    <span className="w-1 h-1 bg-yellow-600 rounded-full mr-1"></span>
+                                <span className="px-3.5 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-sm flex items-center shadow-sm">
+                                    <span className="w-2 h-2 bg-yellow-600 rounded-full mr-2"></span>
                                     Medium
                                 </span>
-                                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm flex items-center">
-                                    <span className="w-1 h-1 bg-green-600 rounded-full mr-1"></span>
+                                <span className="px-3.5 py-1.5 bg-green-100 text-green-800 rounded-full text-sm flex items-center shadow-sm">
+                                    <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
                                     Low
                                 </span>
                             </div>
 
                             <button
                                 onClick={fetchDataAndExportCSV}
-                                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm flex items-center"
+                                className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2.5 rounded-lg text-sm flex items-center gap-2 font-medium transition-all duration-200 hover:shadow-md border border-gray-200"
                             >
-                                <Download className="h-4 w-4 mr-1" />
+                                <Download className="h-4 w-4" />
                                 Export Data
                             </button>
                         </div>
@@ -736,7 +1013,7 @@ const HomePage = () => {
 
                         {/* Map View Controls */}
                         <div className="flex items-center justify-between mb-4">
-                            <div className="flex space-x-2">
+                            <div className="flex space-x-2 ">
                                 <button
                                     onClick={toggleLegend}
                                     className={`px-3 py-2 text-sm rounded-md flex items-center ${legend ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -1013,7 +1290,7 @@ const HomePage = () => {
                                             </div>
                                             <div className="flex gap-3">
                                                 <a
-                                                    href={selectedEvent.link || "#"}
+                                                    href={selectedEvent.sources?.[0]?.url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center"
@@ -1040,212 +1317,248 @@ const HomePage = () => {
                         )}
                     </div>
 
-                    {/* Sidebar with Enhanced UI */}
-                    <div className={`${isFullscreen ? 'hidden' : 'lg:w-1/3'} space-y-6`}>
-                        {/* Notifications Panel */}
-                        <div className="bg-white p-6 rounded-xl shadow-md">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-xl font-semibold text-gray-800 flex items-center">
-                                    <Bell className="w-5 h-5 mr-2 text-red-600" />
-                                    Recent Alerts
-                                </h3>
-                                <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
-                                    {notifications.length} New
-                                </span>
-                            </div>
+                    {/* Sidebar with Events List - Enhanced */}
+                    {!isFullscreen && (
+                        <div className="lg:w-1/3">
+                            {/* Events List Card - Enhanced */}
+                            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 mb-8">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-2xl font-bold text-gray-800 flex items-center">
+                                        <div className="bg-red-100 p-2 rounded-lg mr-3">
+                                            <AlertCircle className="w-5 h-5 text-red-600" />
+                                        </div>
+                                        Recent Disasters
+                                    </h3>
+                                    <div className="px-4 py-1.5 bg-blue-50 text-blue-700 rounded-full font-medium text-sm">
+                                        {filteredDisasters.length} Events
+                                    </div>
+                                </div>
 
-                            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                                {notifications.map((notification) => (
-                                    <div
-                                        key={notification.id}
-                                        className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition cursor-pointer"
-                                        onClick={() => {
-                                            // Find matching event and set as selected
-                                            const matchingEvent = liveEvents.find(
-                                                (e) => e.categories[0]?.title.toLowerCase() === notification.type.toLowerCase()
-                                            );
-                                            if (matchingEvent) setSelectedEvent(matchingEvent);
-                                        }}
-                                    >
-                                        <div className="flex justify-between">
-                                            <div className="flex items-start">
-                                                <div className="p-2 rounded-lg bg-red-50 mr-3">
-                                                    {getDisasterIcon(notification.type)}
-                                                </div>
-                                                <div>
-                                                    <h4 className="font-medium text-gray-800">{notification.type}</h4>
-                                                    <p className="text-sm text-gray-600">{notification.location}</p>
-                                                </div>
+                                {/* Search Box - Enhanced */}
+                                <div className="relative mb-5">
+                                    <input
+                                        type="text"
+                                        placeholder="Search disasters..."
+                                        // value={searchTerm}
+                                        // onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg py-3 pl-12 pr-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                                    />
+                                    <Search className="absolute left-4 top-3.5 text-gray-400 h-5 w-5" />
+                                </div>
+
+                                {/* Events List - Enhanced with Virtual Scrolling */}
+                                <div className="h-[600px] overflow-y-auto pr-2 styled-scrollbar">
+                                    {loading ? (
+                                        <div className="flex flex-col items-center justify-center h-full">
+                                            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                                            <p className="mt-4 text-gray-600">Loading events...</p>
+                                        </div>
+                                    ) : filteredDisasters.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-full">
+                                            <div className="bg-gray-100 p-4 rounded-full mb-4">
+                                                <Search className="h-8 w-8 text-gray-500" />
                                             </div>
-                                            <span className={`text-xs px-2 py-1 rounded-full ${getSeverityColor(notification.severity)}`}>
-                                                {notification.severity}
-                                            </span>
+                                            <p className="text-gray-600 text-center">No disasters match your filters</p>
                                         </div>
-                                        <div className="flex justify-between items-center mt-3">
-                                            <span className="text-xs text-gray-500">{notification.time}</span>
-                                            <button className="text-xs text-blue-600 hover:underline">Details</button>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {filteredDisasters.map((disaster) => (
+                                                <div
+                                                    key={disaster.id}
+                                                    className={`p-4 rounded-xl border transition-all hover:shadow-md cursor-pointer ${selectedEvent && selectedEvent.id === disaster.id
+                                                        ? 'bg-blue-50 border-blue-200'
+                                                        : 'bg-white border-gray-200 hover:border-blue-200'
+                                                        }`}
+                                                    onClick={() => setSelectedEvent(disaster)}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div className={`p-2.5 rounded-lg shadow-sm ${getSeverityColor(disaster.severity)}`}>
+                                                            {getDisasterIcon(disaster.categories[0]?.title, "h-5 w-5")}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex justify-between">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h4 className="font-medium text-gray-900 mb-1 truncate">{disaster.title}</h4>
+                                                                    <p className="text-gray-500 text-sm mb-2 line-clamp-2">
+                                                                        {disaster.description || 'No description available'}
+                                                                    </p>
+                                                                </div>
+                                                                {disaster.severity === 'high' && (
+                                                                    <span className="flex h-2.5 w-2.5 relative ml-2 mt-1">
+                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                    {disaster.categories[0]?.title || 'Unknown'}
+                                                                </span>
+                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                                    <Clock className="w-3 h-3 mr-1" />
+                                                                    {formatDate(disaster.date)}
+                                                                </span>
+                                                                {disaster.geometries && disaster.geometries[0] && (
+                                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                                        <MapPin className="w-3 h-3 mr-1" />
+                                                                        {disaster.continent ?
+                                                                            disaster.continent.replace(/_/g, ' ').charAt(0).toUpperCase() +
+                                                                            disaster.continent.replace(/_/g, ' ').slice(1) :
+                                                                            'Unknown'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    </div>
-                                ))}
+                                    )}
+                                </div>
                             </div>
 
-                            <button className="w-full mt-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition">
-                                View All Alerts
-                            </button>
-                        </div>
-
-                        {/* Statistics Panel */}
-                        <div className="bg-white p-6 rounded-xl shadow-md">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-xl font-semibold text-gray-800 flex items-center">
-                                    <TrendingUp className="w-5 w-5 mr-2 text-green-600" />
-                                    Global Statistics
+                            {/* Analytics Card - Enhanced */}
+                            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 mb-8">
+                                <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
+                                    <div className="bg-purple-100 p-2 rounded-lg mr-3">
+                                        <BarChart className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    Disaster Analytics
                                 </h3>
-                                <span className="text-xs text-gray-500">Updated hourly</span>
+
+                                <div className="space-y-6">
+                                    {/* Analytics Cards */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200 shadow-sm">
+                                            <div className="font-medium text-blue-800 mb-1">Total Events</div>
+                                            <div className="text-2xl font-bold text-blue-900">{filteredDisasters.length}</div>
+                                        </div>
+                                        <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-xl border border-red-200 shadow-sm">
+                                            <div className="font-medium text-red-800 mb-1">High Severity</div>
+                                            <div className="text-2xl font-bold text-red-900">
+                                                {filteredDisasters.filter(d => d.severity === 'high').length}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Visualization - Types Distribution */}
+                                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                        <h4 className="font-medium text-gray-700 mb-3 text-sm">Disaster Types Distribution</h4>
+                                        <div className="h-40">
+                                            {/* Replace with actual chart component */}
+                                            <div className="h-full flex items-center justify-center text-gray-500">
+                                                <PieChart className="w-6 h-6 mr-2" />
+                                                Chart would render here
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Recent Activity Timeline */}
+                                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                        <h4 className="font-medium text-gray-700 mb-3 text-sm">Recent Activity</h4>
+                                        <div className="space-y-3">
+                                            {[1, 2, 3].map((_, index) => (
+                                                <div key={index} className="flex items-start">
+                                                    <div className="flex-shrink-0 h-4 w-4 rounded-full bg-blue-500 mt-1.5 mr-3 relative">
+                                                        {index === 0 && (
+                                                            <span className="absolute w-2.5 h-2.5 bg-blue-400 rounded-full -top-0.5 -right-0.5 animate-ping"></span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm text-gray-800 font-medium">
+                                                            {['New disaster reported', 'Severity level updated', 'Status changed'][index]}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {['5 minutes ago', '2 hours ago', 'Yesterday'][index]}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-blue-50 p-4 rounded-lg">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-blue-800">Total Events</span>
-                                        <Globe className="w-4 h-4 text-blue-600" />
+                            {/* Alert Preferences Card - Enhanced */}
+                            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100">
+                                <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
+                                    <div className="bg-green-100 p-2 rounded-lg mr-3">
+                                        <Bell className="w-5 h-5 text-green-600" />
                                     </div>
-                                    <p className="text-2xl font-bold text-blue-900 mt-2">1,248</p>
-                                    <p className="text-xs text-blue-700 mt-1">+12% this month</p>
-                                </div>
+                                    Notification Preferences
+                                </h3>
 
-                                <div className="bg-red-50 p-4 rounded-lg">
+                                <div className="space-y-5">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-red-800">Active Now</span>
-                                        <Flame className="w-4 h-4 text-red-600" />
+                                        <div>
+                                            <p className="font-medium text-gray-800">Global Notifications</p>
+                                            <p className="text-sm text-gray-500">Receive alerts for all major disasters</p>
+                                        </div>
+                                        <Switch
+                                            checked={notifications.global}
+                                            // onChange={() => handleNotificationToggle('global')}
+                                            className={`${notifications.global ? 'bg-blue-600' : 'bg-gray-200'
+                                                } relative inline-flex h-6 w-11 items-center rounded-full`}
+                                        >
+                                            <span
+                                                className={`${notifications.global ? 'translate-x-6' : 'translate-x-1'
+                                                    } h-4 w-4 transform rounded-full bg-white transition`}
+                                            />
+                                        </Switch>
                                     </div>
-                                    <p className="text-2xl font-bold text-red-900 mt-2">{filteredDisasters.length}</p>
-                                    <p className="text-xs text-red-700 mt-1">+3 today</p>
-                                </div>
 
-                                <div className="bg-purple-50 p-4 rounded-lg">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-purple-800">High Risk</span>
-                                        <AlertTriangle className="w-4 h-4 text-purple-600" />
+                                        <div>
+                                            <p className="font-medium text-gray-800">Nearby Events Only</p>
+                                            <p className="text-sm text-gray-500">Only alerts within 100km of your location</p>
+                                        </div>
+                                        <Switch
+                                            checked={notifications.nearby}
+                                            // onChange={() => handleNotificationToggle('nearby')}
+                                            className={`${notifications.nearby ? 'bg-blue-600' : 'bg-gray-200'
+                                                } relative inline-flex h-6 w-11 items-center rounded-full`}
+                                        >
+                                            <span
+                                                className={`${notifications.nearby ? 'translate-x-6' : 'translate-x-1'
+                                                    } h-4 w-4 transform rounded-full bg-white transition`}
+                                            />
+                                        </Switch>
                                     </div>
-                                    <p className="text-2xl font-bold text-purple-900 mt-2">48</p>
-                                    <p className="text-xs text-purple-700 mt-1">Most in Asia</p>
-                                </div>
 
-                                <div className="bg-green-50 p-4 rounded-lg">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-green-800">Resolved</span>
-                                        <Shield className="w-4 h-4 text-green-600" />
+                                        <div>
+                                            <p className="font-medium text-gray-800">High Severity Only</p>
+                                            <p className="text-sm text-gray-500">Only receive critical alert notifications</p>
+                                        </div>
+                                        <Switch
+                                            checked={notifications.highSeverity}
+                                            // onChange={() => handleNotificationToggle('highSeverity')}
+                                            className={`${notifications.highSeverity ? 'bg-blue-600' : 'bg-gray-200'
+                                                } relative inline-flex h-6 w-11 items-center rounded-full`}
+                                        >
+                                            <span
+                                                className={`${notifications.highSeverity ? 'translate-x-6' : 'translate-x-1'
+                                                    } h-4 w-4 transform rounded-full bg-white transition`}
+                                            />
+                                        </Switch>
                                     </div>
-                                    <p className="text-2xl font-bold text-green-900 mt-2">892</p>
-                                    <p className="text-xs text-green-700 mt-1">This year</p>
-                                </div>
-                            </div>
 
-                            <div className="mt-6">
-                                <h4 className="text-sm font-medium text-gray-700 mb-2">Event Distribution</h4>
-                                <div className="h-40 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
-                                    [Chart Placeholder]
+                                    <div className="pt-4">
+                                        <button
+                                            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-3 rounded-xl font-medium transition-all duration-300 shadow-md shadow-blue-500/30 active:scale-98 flex items-center justify-center gap-2"
+                                        >
+                                            <Settings className="h-5 w-5" />
+                                            Customize Alert Settings
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-
-                        {/* Quick Actions */}
-                        <div className="bg-white p-6 rounded-xl shadow-md">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                                <Zap className="w-5 h-5 mr-2 text-yellow-500" />
-                                Quick Actions
-                            </h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button className="p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition flex flex-col items-center">
-                                    <Bell className="w-5 h-5 mb-1" />
-                                    <span className="text-xs font-medium">Subscribe</span>
-                                </button>
-                                <button className="p-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition flex flex-col items-center">
-                                    <MapPin className="w-5 h-5 mb-1" />
-                                    <span className="text-xs font-medium">Safe Zones</span>
-                                </button>
-                                <button className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition flex flex-col items-center">
-                                    <Target className="w-5 h-5 mb-1" />
-                                    <span className="text-xs font-medium">Track Event</span>
-                                </button>
-                                <button className="p-3 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition flex flex-col items-center">
-                                    <AlertTriangle className="w-5 h-5 mb-1" />
-                                    <span className="text-xs font-medium">Report</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                    )}
                 </div>
             </section>
 
-            {/* Footer */}
-            <footer className="bg-gray-900 text-white py-12">
-                <div className="container mx-auto px-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                        <div>
-                            <h4 className="text-lg font-semibold mb-4">GeoAlert</h4>
-                            <p className="text-gray-400 text-sm">
-                                Advanced disaster monitoring and alert system providing real-time global event tracking and notifications.
-                            </p>
-                        </div>
-                        <div>
-                            <h4 className="text-lg font-semibold mb-4">Resources</h4>
-                            <ul className="space-y-2 text-gray-400 text-sm">
-                                <li><a href="#" className="hover:text-white transition">Disaster Preparedness</a></li>
-                                <li><a href="#" className="hover:text-white transition">Emergency Contacts</a></li>
-                                <li><a href="#" className="hover:text-white transition">Evacuation Routes</a></li>
-                                <li><a href="#" className="hover:text-white transition">Safety Checklists</a></li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h4 className="text-lg font-semibold mb-4">Quick Links</h4>
-                            <ul className="space-y-2 text-gray-400 text-sm">
-                                <li><a href="#" className="hover:text-white transition">Live Map</a></li>
-                                <li><a href="#" className="hover:text-white transition">Alert History</a></li>
-                                <li><a href="#" className="hover:text-white transition">API Documentation</a></li>
-                                <li><a href="#" className="hover:text-white transition">Mobile Apps</a></li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h4 className="text-lg font-semibold mb-4">Contact</h4>
-                            <ul className="space-y-2 text-gray-400 text-sm">
-                                <li className="flex items-center">
-                                    <Mail className="w-4 h-4 mr-2" />
-                                    contact@geoalert.org
-                                </li>
-                                <li className="flex items-center">
-                                    <Phone className="w-4 h-4 mr-2" />
-                                    +1 (555) 123-4567
-                                </li>
-                                <li className="flex items-center">
-                                    <MapPin className="w-4 h-4 mr-2" />
-                                    Global Monitoring Center
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div className="border-t border-gray-800 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
-                        <p className="text-gray-400 text-sm mb-4 md:mb-0">
-                            © 2023 GeoAlert. All rights reserved.
-                        </p>
-                        <div className="flex space-x-6">
-                            <a href="#" className="text-gray-400 hover:text-white transition">
-                                <Twitter className="w-5 h-5" />
-                            </a>
-                            <a href="#" className="text-gray-400 hover:text-white transition">
-                                <Facebook className="w-5 h-5" />
-                            </a>
-                            <a href="#" className="text-gray-400 hover:text-white transition">
-                                <Linkedin className="w-5 h-5" />
-                            </a>
-                            <a href="#" className="text-gray-400 hover:text-white transition">
-                                <Github className="w-5 h-5" />
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </footer>
+            <Footer />
 
             <ToastContainer
                 position="top-right"
