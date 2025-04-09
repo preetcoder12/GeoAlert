@@ -28,16 +28,20 @@ const userSchema = new mongoose.Schema({
       lat: Number,
       lng: Number,
     },
-    default: null, 
+    default: null,
   },
   subscribedToAlerts: {
     type: Boolean,
-    default: false, 
+    default: false,
   },
   role: {
     type: String,
     enum: ["user", "admin"],
     default: "user",
+  },
+  location: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
   },
 }, { timestamps: true });
 

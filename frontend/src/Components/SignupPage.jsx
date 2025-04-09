@@ -12,7 +12,11 @@ const SignupPage = () => {
         phone: '',
         password: '',
         role: 'user',
-        subscribedToAlerts: true
+        subscribedToAlerts: true,
+        location: {
+            latitude: null,
+            longitude: null
+        }
     });
 
     const [message, setMessage] = useState('');
@@ -26,6 +30,29 @@ const SignupPage = () => {
             ...formData,
             [name]: type === 'checkbox' ? checked : value
         });
+    };
+
+    const handleSetLocation = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    setFormData((prev) => ({
+                        ...prev,
+                        location: {
+                            latitude,
+                            longitude
+                        }
+                    }));
+                    toast.success(`Location set: (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+                },
+                (error) => {
+                    toast.error("Failed to get location");
+                }
+            );
+        } else {
+            toast.error("Geolocation not supported");
+        }
     };
 
     const handleSubmit = async (e) => {
@@ -42,7 +69,11 @@ const SignupPage = () => {
                 phone: '',
                 password: '',
                 role: 'user',
-                subscribedToAlerts: true
+                subscribedToAlerts: true,
+                location: {
+                    latitude: null,
+                    longitude: null
+                }
             });
 
             setTimeout(() => {
@@ -111,18 +142,20 @@ const SignupPage = () => {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number (with country code)</label>
                             <input
                                 type="tel"
                                 name="phone"
                                 value={formData.phone}
                                 onChange={handleChange}
-                                pattern="[0-9]{10}"
+                                pattern="^\+[1-9]\d{1,14}$"
                                 required
                                 className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-red-400"
-                                placeholder="9876543210"
+                                placeholder="+919876543210"
                             />
+                            <p className="text-xs text-gray-500 mt-1">Format: +[country code][number], e.g., +91XXXXXXXXXX</p>
                         </div>
+
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
@@ -168,6 +201,22 @@ const SignupPage = () => {
                                 className="accent-red-500"
                             />
                             <label className="text-sm text-gray-700">Subscribe to real-time disaster alerts</label>
+                        </div>
+
+                        <div className="space-y-2">
+                            <button
+                                type="button"
+                                onClick={handleSetLocation}
+                                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md transition-colors duration-300"
+                            >
+                                Set Current Location
+                            </button>
+
+                            {formData.location.latitude && formData.location.longitude && (
+                                <p className="text-sm text-gray-700 text-center">
+                                    📍 Location Set: ({formData.location.latitude.toFixed(4)}, {formData.location.longitude.toFixed(4)})
+                                </p>
+                            )}
                         </div>
 
                         <button

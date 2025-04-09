@@ -1,6 +1,7 @@
 import { Switch } from '@headlessui/react';
-
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect } from 'react';
+import axios from 'axios';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON, ZoomControl } from 'react-leaflet';
 import {
     Bell,
@@ -38,16 +39,71 @@ import {
     BarChart,
     PieChart,
     Settings
-} from 'lucide-react'; import 'leaflet/dist/leaflet.css';
+} from 'lucide-react';
+import 'leaflet/dist/leaflet.css';
 import { ToastContainer, toast } from 'react-toastify';
-import axios from 'axios';
 import { useMap } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import { CiLogout } from "react-icons/ci";
 import { FaLocationDot } from "react-icons/fa6";
 import Footer from './Footer';
+import DisasterList from './DisasterCard';
 
+const ProximityAlerts = ({ userLocation, liveEvents }) => {
+    const [nearbyDisasters, setNearbyDisasters] = useState([]);
+
+    const haversineDistance = (lat1, lng1, lat2, lng2) => {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * (Math.PI / 180);
+        const dLng = (lng2 - lng1) * (Math.PI / 180);
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * (Math.PI / 180)) *
+            Math.cos(lat2 * (Math.PI / 180)) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    };
+
+    useEffect(() => {
+        if (!userLocation || !liveEvents.length) return;
+
+        const nearby = liveEvents.filter(event => {
+            const coords = event.geometries?.[0]?.coordinates;
+            if (!coords) return false;
+
+            const distance = haversineDistance(
+                userLocation.lat,
+                userLocation.lng,
+                coords[1],
+                coords[0]
+            );
+            return distance <= 50;
+        });
+
+        setNearbyDisasters(nearby);
+    }, [userLocation, liveEvents]);
+
+    if (!nearbyDisasters.length) return null;
+
+    return (
+        <div className="fixed bottom-4 right-4 z-50 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg max-w-xs">
+            <h3 className="font-bold text-red-600 dark:text-red-400 flex items-center">
+                <AlertCircle className="mr-2" /> Nearby Alerts
+            </h3>
+            <div className="mt-2 space-y-2">
+                {nearbyDisasters.map(disaster => (
+                    <div key={disaster.id} className="text-sm p-2 bg-red-50 dark:bg-gray-700 rounded">
+                        <p className="font-medium">{disaster.title}</p>
+                        <p className="text-xs">{disaster.categories?.[0]?.title}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 const HomePage = () => {
     const [activeDisasters, setActiveDisasters] = useState([]);
@@ -76,65 +132,16 @@ const HomePage = () => {
     const [visibleEvents, setVisibleEvents] = useState(50);
     const [mapReady, setMapReady] = useState(false);
     const [location, setLocation] = useState("");
-    const [darkMode, setDarkMode] = useState(false); // New state for dark mode
-
-    const [latLong, setLatLong] = useState("");   // For coordinates
-
-    // In your frontend React code
-    const [sentAlertIds, setSentAlertIds] = useState(new Set());
-
-    // Add this to your checkForNearbyDisasters function
-    const checkForNearbyDisasters = async () => {
-        try {
-            // Check each disaster in filteredDisasters
-            for (const disaster of filteredDisasters) {
-                // Skip if we've already sent an alert for this disaster
-                if (sentAlertIds.has(disaster.id)) continue;
-
-                const disasterCoords = disaster.geometries?.[0]?.coordinates;
-                if (!disasterCoords || disasterCoords.length !== 2) continue;
-
-                // Check if this disaster type is in user's preferences
-                const disasterType = disaster.categories?.[0]?.title;
-                if (!alertPreferences.disasterTypes.includes(disasterType)) continue;
-
-                // Calculate distance
-                const distance = geolib.getDistance(
-                    { latitude: userLocation.lat, longitude: userLocation.lng },
-                    { latitude: disasterCoords[1], longitude: disasterCoords[0] }
-                );
-
-                // If within alert radius (convert km to meters)
-                if (distance <= alertPreferences.radius * 1000) {
-                    // Send alert request to backend
-                    const response = await axios.post('http://localhost:8000/api/send-alert', {
-                        phone: phoneNumber,
-                        disaster,
-                        userLocation,
-                        distance // Pass the distance so we can tell the user how far away it is
-                    });
-
-                    // Mark this disaster as alerted
-                    setSentAlertIds(prev => new Set([...prev, disaster.id]));
-
-                    console.log('Alert sent:', response.data);
-
-                    // Show a notification in the app
-                    toast.info(`Alert sent: ${disaster.title} is ${Math.round(distance / 1000)}km away`, {
-                        duration: 10000,
-                        icon: '🚨'
-                    });
-                }
-            }
-        } catch (err) {
-            console.error('Error in disaster alert check:', err);
-            toast.error('Failed to send alert. Please check your connection.');
-        }
-    };
-
+    const [darkMode, setDarkMode] = useState(false);
+    const [latLong, setLatLong] = useState("");
 
     const mapRef = useRef(null);
     const navigate = useNavigate();
+
+    const [userPhone, setUserPhone] = useState(""); // Store user's phone number
+    const [alertCooldown, setAlertCooldown] = useState(false);
+
+
 
     // Dark mode setup and persistence
     useEffect(() => {
@@ -432,9 +439,67 @@ const HomePage = () => {
     }, []);
 
     const handleLogout = () => {
-        localStorage.removeItem("authToken");
+        localStorage.clear();  // Clears all localStorage items
         navigate("/signup");
     };
+
+    const userId = localStorage.getItem("authToken");
+    const [address, setAddress] = useState("Loading location...");
+    const [userdetail, setUserDetail] = useState({});
+
+
+
+    const fetchUserDetails = useCallback(async () => {
+        try {
+            const response = await axios.get(`http://localhost:8000/user/details/${userId}`);
+            console.log("Full API Response:", response.data);
+            console.log("Raw API response:", response.data);
+            console.log("Extracted user:", response.data.user);
+            console.log("Extracted location:", response.data.user?.location);
+
+            const user = response.data.user; // Adjust if necessary
+
+            if (!user || typeof user !== 'object') {
+                throw new Error("User object not found in response");
+            }
+            setUserPhone(user.phone || ""); // Add this line
+            const {
+                location = { lat: 0, lng: 0 },
+                ...restUserData
+            } = user;
+
+            if (typeof location !== 'object' || !('lat' in location) || !('lng' in location)) {
+                console.error("Invalid location format:", location);
+                throw new Error("Location data malformed");
+            }
+
+            setUserDetail({ ...restUserData, location });
+            setLatLong({ lat: location.lat, lng: location.lng });
+
+            console.log("Verified location:", location.lat, location.lng);
+
+            try {
+                const geoResponse = await axios.get(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.lat}&lon=${location.lng}`
+                );
+                setAddress(geoResponse.data.display_name || "Address unavailable");
+            } catch (geoError) {
+                console.warn("Geocoding failed:", geoError);
+                setAddress(`Near ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`);
+            }
+
+        } catch (error) {
+            console.error("Error in fetchUserDetails:", error);
+            setAddress("Error loading location");
+            setLatLong({ lat: 0, lng: 0 }); // fallback
+        }
+    }, [userId]);
+    // console.log("user phone  is : ",userPhone)
+
+    useEffect(() => {
+        fetchUserDetails();  // This will call the function
+    }, [userId]);  // Add dependencies if necessary (e.g., when userId changes)
+
 
     const getLocation = () => {
         if (navigator.geolocation) {
@@ -455,10 +520,25 @@ const HomePage = () => {
                             setLocation(address);
                             localStorage.setItem("location", address);
                             toast.success("Location saved!");
+
+                            // Now send the location to the backend for updating
+                            const userId = localStorage.getItem("authToken");  // Assuming you store the userId in localStorage
+
+                            // Send PUT request to update the location in the database
+                            await axios.put(`http://localhost:8000/user/updateLocation/${userId}`, {
+                                location: {
+                                    lat: latitude,
+                                    lng: longitude,
+                                },
+                            });
+
+                            toast.success("Location updated. Please refresh!!");
+
+                            // Refresh the page right after the success message
+                            window.location.reload(); // Refresh the page immediately after the location is updated
                         } else {
                             setLocation("Location Not Found");
                         }
-
                     } catch (error) {
                         console.error("Geocoding Error: ", error);
                         setLocation("Error Getting Location");
@@ -474,6 +554,7 @@ const HomePage = () => {
             setLocation("Geolocation Not Supported");
         }
     };
+
 
     useEffect(() => {
         const storedLocation = localStorage.getItem("location");
@@ -810,90 +891,202 @@ const HomePage = () => {
         document.head.appendChild(style);
 
         return () => {
-            // Clean up
             document.head.removeChild(style);
         };
     }, []);
 
 
+    // Haversine distance calculation
+    const haversineDistance = (lat1, lng1, lat2, lng2) => {
+        const R = 6371; // Earth's radius in kilometers
+        const dLat = (lat2 - lat1) * (Math.PI / 180);
+        const dLng = (lng2 - lng1) * (Math.PI / 180);
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * (Math.PI / 180)) *
+            Math.cos(lat2 * (Math.PI / 180)) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // Distance in kilometers
+    };
+
+    const sendDisasterAlertSMS = async (disaster) => {
+        if (!userPhone) {
+            toast.warning("Please set your phone number in profile to receive alerts");
+            return;
+        }
+
+        try {
+            const response = await axios.post('http://localhost:8000/api/send-alert', {
+                phone: `+${userPhone.replace(/\D/g, '')}`,
+                message: `ALERT: ${disaster.title} (${disaster.categories?.[0]?.title || 'Disaster'}) detected within 500km of your location. Stay safe!`,
+                coordinates: disaster.geometries?.[0]?.coordinates
+            });
+
+            if (response.data.success) {
+                toast.success("Disaster alert sent to your phone!");
+            } else {
+                toast.error("Failed to send alert: " + (response.data.error || "Unknown error"));
+            }
+        } catch (error) {
+            console.error("Error sending alert:", error);
+            toast.error(error.response?.data?.error || "Failed to send alert notification");
+        }
+    };
+
+    // Updated proximity check effect
+    useEffect(() => {
+        const checkProximity = async () => {
+            if (!userLocation || !liveEvents.length) {
+                console.log("Skipping proximity check - missing location or events");
+                return;
+            }
+
+            console.log("Running proximity check...");
+            console.log("User location:", userLocation);
+            console.log("Live events count:", liveEvents.length);
+
+            for (const event of liveEvents) {
+                const coords = event.geometries?.[0]?.coordinates;
+                if (!coords || coords.length !== 2) continue;
+
+                try {
+                    const distance = haversineDistance(
+                        userLocation.lat,
+                        userLocation.lng,
+                        coords[1], // latitude
+                        coords[0]  // longitude
+                    );
+
+                    console.log(`Distance to ${event.title}: ${distance.toFixed(2)}km`);
+
+                    if (distance <= 500) {  // Updated to 500 km
+                        console.log("Within danger zone - sending alert");
+                        await sendDisasterAlertSMS(event);
+                        break;  // Sends alert for the first event within 500 km
+                    }
+                } catch (error) {
+                    console.error("Error calculating distance:", error);
+                }
+            }
+        };
+
+        // Initial check
+        checkProximity();
+
+        // Periodic checks every 15 minutes (900000 milliseconds)
+        const interval = setInterval(checkProximity, 900000);
+
+        return () => clearInterval(interval);
+    }, [userLocation, liveEvents, userPhone]);  // Dependency on liveEvents, userLocation, and userPhone
 
 
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
             {/* Enhanced Header */}
-            <header className="bg-gradient-to-r from-blue-900 via-indigo-800 to-purple-900 shadow-xl border-b border-indigo-500/30">
-                <div className="container mx-auto px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-4">
+            <button
+                onClick={() => sendDisasterAlertSMS({
+                    title: "TEST DISASTER",
+                    categories: [{ title: "Earthquake" }],
+                    geometries: [{
+                        coordinates: [
+                            userLocation.lng + 0.1,  // ~11km east
+                            userLocation.lat + 0.1   // ~11km north
+                        ]
+                    }]
+                })}
+                className="bg-blue-500 text-white p-2 rounded"
+            >
+                Test Alert (50km)
+            </button>
+            <header className="bg-gradient-to-r from-gray-900/95 to-red-900/95 shadow-lg border-b border-indigo-500/40">
+                <div className="container mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-5">
                     {/* Left: Logo, Title, Live */}
                     <div className="flex flex-col md:flex-row items-center gap-6 w-full md:w-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-white/10 p-2 rounded-lg shadow-lg backdrop-blur">
-                                <Globe className="h-8 w-8 text-green-400 drop-shadow-glow animate-pulse" />
+                            <div className="bg-white/10 p-2 rounded-lg shadow-lg backdrop-blur-sm">
+                                <Globe className="h-8 w-8 text-green-400 drop-shadow-md animate-pulse" />
                             </div>
-                            <h1 className="text-3xl font-extrabold text-white tracking-wide drop-shadow-md">
-                                Geo<span className="text-green-400">Alert</span>
+                            <h1 className="text-3xl font-bold text-white tracking-wide drop-shadow-md">
+                                Geo<span className="text-green-400 font-extrabold">Alert</span>
                             </h1>
                         </div>
 
-                        <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg animate-pulse">
-                            <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
-                            LIVE
-                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-md">
+                                <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
+                                LIVE
+                            </div>
 
-                        <div className="text-white text-sm font-medium bg-black/30 px-4 py-1.5 rounded-full shadow-inner backdrop-blur-sm">
-                            🕒 {new Date(time).toLocaleString()}
+                            <div className="text-white text-sm font-medium bg-black/30 px-4 py-1.5 rounded-full shadow-inner backdrop-blur-sm">
+                                🕒 {new Date(time).toLocaleString()}
+                            </div>
                         </div>
                     </div>
 
                     {/* Middle: Location Info */}
-                    <div className="text-white text-sm md:text-right flex-1 bg-white/5 rounded-xl px-5 py-2.5 backdrop-blur-sm shadow-inner">
-                        <div className="mb-1 flex items-center gap-2">
+                    <div className="text-white text-sm md:text-right flex-1 bg-white/5 rounded-xl px-5 py-3 backdrop-blur-sm shadow-inner border border-white/10">
+                        {/* Address */}
+                        <div className="mb-3 flex items-center gap-2">
                             <MapPin className="h-4 w-4 text-green-400" />
-                            <span className="font-medium">Location:</span>{" "}
-                            {location || <span className="text-gray-300 italic">Fetching address...</span>}
+                            <span className="font-medium">Location:</span>
+                            <span className="text-gray-200 italic">
+                                {address || "Fetching address..."}
+                            </span>
                         </div>
+
+                        {/* Coordinates */}
                         <div className="flex items-center gap-2">
                             <Globe className="h-4 w-4 text-green-400" />
-                            <span className="font-medium">Coordinates:</span>{" "}
-                            {latLong || <span className="text-gray-300 italic">Fetching coordinates...</span>}
+                            <span className="font-medium">Coordinates:</span>
+                            <span className="text-gray-200 italic">
+                                {userdetail?.location?.lat && userdetail?.location?.lng
+                                    ? `${latLong?.lat?.toFixed(4)}, ${latLong?.lng?.toFixed(4)}`
+                                    : "Fetching coordinates..."}
+                            </span>
                         </div>
                     </div>
 
                     {/* Right: Logout */}
                     <button
                         onClick={handleLogout}
-                        className="px-5 py-2.5 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg shadow-lg font-semibold text-sm
-                                hover:from-red-600 hover:to-orange-600 transition-all duration-300 ease-in-out 
-                                active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-blue-900 flex items-center gap-2"
+                        className="px-5 py-2.5 bg-gradient-to-r from-gray-700 to-gray-900 text-white rounded-lg shadow-lg font-semibold text-sm
+              hover:from-red-600 hover:to-orange-600 transition-all duration-300 ease-in-out 
+              active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 focus:ring-offset-blue-900 flex items-center gap-2"
                     >
                         <CiLogout className="text-white text-lg" />
                         <span>Logout</span>
                     </button>
                 </div>
             </header>
+
             {/* Enhanced Hero Section */}
-            <section className="relative bg-cover bg-center py-20" style={{ backgroundImage: "url('/images/world-map-bg.jpg')" }}>
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-900/90 to-purple-900/90"></div>
+            <section className="relative bg-cover bg-center py-24" style={{ backgroundImage: "url('/images/world-map-bg.jpg')" }}>
+                <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 to-red-900/85"></div>
                 <div className="container mx-auto px-6 relative z-10">
-                    <div className="max-w-3xl backdrop-blur-sm bg-black/30 p-8 rounded-3xl shadow-2xl border border-white/10">
+                    <div className="max-w-3xl backdrop-blur-md bg-black/40 p-8 rounded-3xl shadow-2xl border border-white/10">
                         <h2 className="text-4xl sm:text-5xl font-bold mb-6 text-white leading-tight">
                             Global Disaster <span className="text-green-400">Monitoring & Alert System</span>
                         </h2>
-                        <p className="text-xl mb-8 text-gray-200 font-light">Track global disasters in real-time, receive instant alerts, and stay prepared with our advanced monitoring and customized region-based notifications.🌍</p>
+                        <p className="text-xl mb-8 text-gray-100 font-light">
+                            Track global disasters in real-time, receive instant alerts, and stay prepared with our advanced monitoring and customized region-based notifications. 🌍
+                        </p>
                         <div className="flex flex-wrap gap-4">
-                            <button className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-indigo-500/30 active:scale-95">
+                            <button className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-indigo-500/40 active:scale-95">
                                 <Bell className="h-5 w-5" />
                                 Enable Global Alerts
                             </button>
-                            <button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-red-500/30 active:scale-95">
+                            <button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white px-7 py-3.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 shadow-lg shadow-red-500/40 active:scale-95">
                                 <Globe className="h-5 w-5" />
                                 <a href='/report' className="text-white">Report Emergency</a>
                             </button>
                             <button
                                 onClick={getLocation}
                                 className="flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/30 text-white px-7 py-3.5 rounded-xl font-medium 
-                                        hover:bg-white/20 transition-all duration-300 ease-in-out shadow-lg
-                                        active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/50"
+          hover:bg-white/20 transition-all duration-300 ease-in-out shadow-lg
+          active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/50"
                             >
                                 <FaLocationDot className="text-lg" />
                                 <span>Set Your Location</span>
@@ -902,6 +1095,7 @@ const HomePage = () => {
                     </div>
                 </div>
             </section>
+
 
             {/* Map Controls - Enhanced */}
             <div className="container mx-auto px-6 -mt-8 ">
@@ -1070,7 +1264,7 @@ const HomePage = () => {
                         ) : (
                             <div className={`${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-96'} rounded-lg overflow-hidden relative shadow-inner`}>
                                 <MapContainer
-                                    center={[20, 0]}
+                                    center={[20, 0]} // Center of the map (you can update this to the user's location later)
                                     zoom={2}
                                     style={{ height: '100%', width: '100%' }}
                                     zoomControl={false}
@@ -1091,17 +1285,16 @@ const HomePage = () => {
                                         subdomains={['a', 'b', 'c']}
                                         noWrap={true}
                                     />
-
                                     <LimitMapBounds />
                                     <ZoomControl position="bottomright" />
 
                                     {/* User Location Marker */}
-                                    {userLocation && (
+                                    {userLocation && userLocation.lat && userLocation.lng && (
                                         <CircleMarker
-                                            center={[userLocation.lat, userLocation.lng]}
+                                            center={[latLong.lat, latLong.lng]}  // Coordinates from userLocation
                                             radius={8}
                                             pathOptions={{
-                                                fillColor: '#3b82f6',
+                                                fillColor: 'red', // Blue color for user location
                                                 color: '#1d4ed8',
                                                 weight: 2,
                                                 opacity: 1,
@@ -1147,6 +1340,8 @@ const HomePage = () => {
                                         />
                                     )}
                                 </MapContainer>
+
+                                {/* Disaster Legend */}
                                 {legend && (
                                     <div className="absolute bottom-4 left-4 z-[1000] bg-white p-3 rounded-md shadow-md">
                                         <h4 className="font-medium text-gray-800 mb-2">Disaster Legend</h4>
@@ -1167,6 +1362,8 @@ const HomePage = () => {
                                     </div>
                                 )}
                             </div>
+
+
                         )}
                         {/* Selected Event Details Card - Enhanced */}
                         {selectedEvent && (
@@ -1179,7 +1376,7 @@ const HomePage = () => {
                                     </h3>
                                     <button
                                         onClick={() => setSelectedEvent(null)}
-                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-50"
+                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-red-50"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
                                             <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -1253,7 +1450,7 @@ const HomePage = () => {
                                                     <span className="font-medium">Status:</span> {selectedEvent.status || "Unknown"}
                                                 </p>
                                                 <p className="text-gray-600">
-                                                    <span className="font-medium">First Reported:</span> {formatDate(selectedEvent.date)}
+                                                    <span className="font-medium">First Reported:</span> {formatDate(selectedEvent.geometries[0].date)}
                                                 </p>
                                             </div>
                                         </div>
@@ -1348,72 +1545,7 @@ const HomePage = () => {
 
                                 {/* Events List - Enhanced with Virtual Scrolling */}
                                 <div className="h-[600px] overflow-y-auto pr-2 styled-scrollbar">
-                                    {loading ? (
-                                        <div className="flex flex-col items-center justify-center h-full">
-                                            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                                            <p className="mt-4 text-gray-600">Loading events...</p>
-                                        </div>
-                                    ) : filteredDisasters.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center h-full">
-                                            <div className="bg-gray-100 p-4 rounded-full mb-4">
-                                                <Search className="h-8 w-8 text-gray-500" />
-                                            </div>
-                                            <p className="text-gray-600 text-center">No disasters match your filters</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            {filteredDisasters.map((disaster) => (
-                                                <div
-                                                    key={disaster.id}
-                                                    className={`p-4 rounded-xl border transition-all hover:shadow-md cursor-pointer ${selectedEvent && selectedEvent.id === disaster.id
-                                                        ? 'bg-blue-50 border-blue-200'
-                                                        : 'bg-white border-gray-200 hover:border-blue-200'
-                                                        }`}
-                                                    onClick={() => setSelectedEvent(disaster)}
-                                                >
-                                                    <div className="flex items-start gap-3">
-                                                        <div className={`p-2.5 rounded-lg shadow-sm ${getSeverityColor(disaster.severity)}`}>
-                                                            {getDisasterIcon(disaster.categories[0]?.title, "h-5 w-5")}
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex justify-between">
-                                                                <div className="flex-1 min-w-0">
-                                                                    <h4 className="font-medium text-gray-900 mb-1 truncate">{disaster.title}</h4>
-                                                                    <p className="text-gray-500 text-sm mb-2 line-clamp-2">
-                                                                        {disaster.description || 'No description available'}
-                                                                    </p>
-                                                                </div>
-                                                                {disaster.severity === 'high' && (
-                                                                    <span className="flex h-2.5 w-2.5 relative ml-2 mt-1">
-                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                                    {disaster.categories[0]?.title || 'Unknown'}
-                                                                </span>
-                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                                    <Clock className="w-3 h-3 mr-1" />
-                                                                    {formatDate(disaster.date)}
-                                                                </span>
-                                                                {disaster.geometries && disaster.geometries[0] && (
-                                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                                        <MapPin className="w-3 h-3 mr-1" />
-                                                                        {disaster.continent ?
-                                                                            disaster.continent.replace(/_/g, ' ').charAt(0).toUpperCase() +
-                                                                            disaster.continent.replace(/_/g, ' ').slice(1) :
-                                                                            'Unknown'}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    <DisasterList loading={loading} filteredDisasters={filteredDisasters} />
                                 </div>
                             </div>
 
@@ -1556,7 +1688,7 @@ const HomePage = () => {
                         </div>
                     )}
                 </div>
-            </section>
+            </section >
 
             <Footer />
 
@@ -1572,7 +1704,7 @@ const HomePage = () => {
                 pauseOnHover
                 theme="colored"
             />
-        </div>
+        </div >
     );
 };
 
