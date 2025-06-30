@@ -79,3 +79,4 @@ A real-time **Disaster Alert & Response System** that tracks global disasters us
 
 Check out the full code and documentation on GitHub:  
 👉 [**GeoAlert GitHub Repository**](https://github.com/preetcoder12/GeoAlert)
+# Geo-Alert
