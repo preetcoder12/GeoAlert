@@ -1,2 +1,0 @@
-GeoAlert – An advanced scope for disaster insights.
-

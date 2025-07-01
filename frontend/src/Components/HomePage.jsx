@@ -266,7 +266,7 @@ const HomePage = () => {
             },
             {
                 id: 4,
-                title: "Cyclone Freddy",
+                title: "Cyclone",
                 description: "Category 4 cyclone makes landfall in Madagascar",
                 categories: [{ title: "Cyclone" }],
                 geometries: [{ coordinates: [47.5162, -18.7669] }], // Madagascar
@@ -1482,7 +1482,6 @@ const HomePage = () => {
                                                 </a>
                                                 <button
                                                     onClick={() => {
-                                                        // Implement share functionality
                                                         navigator.clipboard.writeText(window.location.href);
                                                         toast.success("Event link copied to clipboard!");
                                                     }}

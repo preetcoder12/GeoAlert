@@ -201,7 +201,6 @@ const userdetails = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Validate ID format (optional)
         if (!id.match(/^[0-9a-fA-F]{24}$/)) {
             return res.status(400).json({ error: 'Invalid user ID format' });
         }
